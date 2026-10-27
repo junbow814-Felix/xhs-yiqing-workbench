@@ -251,7 +251,7 @@ def analyze(file_path, keywords):
             "title": title[:300],
             "author": (n.get("nickname") or "")[:100],
             "sent": sent,
-            "score": round(score, 3),
+            "score": round(score, 3),  # 仅用于本地日报，不写入数据库
             "likes": likes,
             "comments": int(n.get("comment_count") or 0),
             "collects": int(n.get("collected_count") or 0),
@@ -268,17 +268,25 @@ def push_to_workbench(items):
     if not items:
         log("没有可写入的数据")
         return
+    # 只发数据库表里存在的列，多余字段（如 score）全部剔除
+    DB_FIELDS = {"kw", "title", "author", "sent", "likes", "comments",
+                 "collects", "risk", "excerpt", "source", "published_at"}
+    rows = [{k: v for k, v in it.items() if k in DB_FIELDS} for it in items]
     # 清空上一批
     r = requests.delete(f"{SUPABASE_URL}/rest/v1/notes?source=eq.real", headers=HDRS, timeout=30)
-    r.raise_for_status()
-    # 分批插入
-    for i in range(0, len(items), 100):
+    if r.status_code >= 400:
+        log(f"清空旧数据失败 HTTP {r.status_code}: {r.text[:200]}")
+        sys.exit(1)
+    # 分批插入，失败时打印服务器具体原因
+    for i in range(0, len(rows), 100):
         r = requests.post(
             f"{SUPABASE_URL}/rest/v1/notes",
-            headers=HDRS, json=items[i:i + 100], timeout=30,
+            headers=HDRS, json=rows[i:i + 100], timeout=30,
         )
-        r.raise_for_status()
-    log(f"已写入 {len(items)} 篇笔记到工作台，打开网页即可看到（页面每 30 秒自动刷新，或点「立即同步」）")
+        if r.status_code >= 400:
+            log(f"写入失败 HTTP {r.status_code}: {r.text[:300]}")
+            sys.exit(1)
+    log(f"已写入 {len(rows)} 篇笔记到工作台，打开网页即可看到（页面每 30 秒自动刷新，或点「立即同步」）")
 
 
 def save_daily_report(items):
