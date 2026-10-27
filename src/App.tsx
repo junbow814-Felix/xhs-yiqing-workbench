@@ -179,6 +179,7 @@ export default function App() {
         risk: n.risk,
         excerpt: n.excerpt ?? "",
         source: "real",
+        noteUrl: (n as { note_url?: string | null }).note_url || undefined,
       }));
     }
     return genMockNotes(state.keywords);
