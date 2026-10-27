@@ -1,0 +1,71 @@
+name: Daily report push to IM
+
+# 每日 09:00（北京时间）把最新一份「上报中心」日报真实推送到 IM 群。
+# 属可选项：浏览器「推送到 IM」按钮若被 CORS 拦截，用这个兜底。
+#
+# 需要在仓库 Settings → Secrets and variables → Actions 中配置：
+#   SUPABASE_URL       https://xxxxx.supabase.co
+#   SUPABASE_ANON_KEY  anon public key
+#   WEBHOOK_URL        群机器人 Webhook 地址
+#   CHANNEL            wecom / dingtalk / feishu
+#   DINGTALK_SECRET    （可选）钉钉机器人启用「加签」时填写
+
+on:
+  schedule:
+    - cron: "0 1 * * *" # UTC 01:00 = 北京时间 09:00
+  workflow_dispatch:
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push latest report
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          CHANNEL: ${{ secrets.CHANNEL }}
+          DINGTALK_SECRET: ${{ secrets.DINGTALK_SECRET }}
+        run: |
+          python3 - <<'EOF'
+          import os, json, urllib.request, urllib.parse, hmac, hashlib, base64, time, sys
+
+          url = os.environ["SUPABASE_URL"].rstrip("/")
+          key = os.environ["SUPABASE_ANON_KEY"]
+          headers = {"apikey": key, "Authorization": "Bearer " + key}
+
+          # 取最新一份日报
+          req = urllib.request.Request(
+              url + "/rest/v1/reports?select=rep_date,content&order=rep_date.desc&limit=1",
+              headers=headers)
+          rows = json.load(urllib.request.urlopen(req, timeout=15))
+          if not rows:
+              print("reports 表为空，跳过推送（先在工作台生成日报）")
+              sys.exit(0)
+          text = rows[0]["content"]
+
+          channel = os.environ.get("CHANNEL", "wecom")
+          webhook = os.environ.get("WEBHOOK_URL", "")
+          if not webhook:
+              print("WEBHOOK_URL 未配置，跳过")
+              sys.exit(0)
+
+          if channel == "wecom":
+              payload = {"msgtype": "markdown", "markdown": {"content": text}}
+          elif channel == "dingtalk":
+              payload = {"msgtype": "markdown", "markdown": {"title": "小红书舆情日报", "text": text}}
+              secret = os.environ.get("DINGTALK_SECRET", "")
+              if secret:
+                  ts = str(round(time.time() * 1000))
+                  sign = base64.b64encode(hmac.new(
+                      secret.encode(), f"{ts}\n{secret}".encode(), hashlib.sha256).digest())
+                  webhook += ("&" if "?" in webhook else "?") + \
+                      "timestamp=" + ts + "&sign=" + urllib.parse.quote(sign)
+          else:
+              payload = {"msg_type": "text", "content": {"text": text}}
+
+          req = urllib.request.Request(webhook, data=json.dumps(payload).encode(),
+              headers={"Content-Type": "application/json"})
+          resp = json.load(urllib.request.urlopen(req, timeout=15))
+          print("IM 响应:", json.dumps(resp, ensure_ascii=False)[:200])
+          EOF
