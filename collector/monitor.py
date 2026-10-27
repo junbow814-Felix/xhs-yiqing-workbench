@@ -43,7 +43,7 @@ def llm_sentiment(text: str, retry: int = 3) -> dict:
     for attempt in range(retry):
         r = requests.post(
             f"{LLM_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {DASHSCOPE_API_KEY}"},
+            headers={"Authorization": f"Bearer {LLM_API_KEY}"},
             json={
                 "model": LLM_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
@@ -85,12 +85,13 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://tqczpfzzlgtkrttndxlf.supa
 SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRxY3pwZnp6bGd0a3J0dG5keGxmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMwOTUxMDEsImV4cCI6MjEwODY3MTEwMX0.9uA6lKFGlma0LZRRQyfC9iLLRXKoMjaZMMcWkT8wuL0")
 MEDIA_CRAWLER_DIR = os.environ.get("MEDIA_CRAWLER_DIR", "MediaCrawler")
 
-# 大模型情感判定（通义千问，兼容 OpenAI 接口格式）。
-# 申请免费 Key: https://bailian.console.aliyun.com/ → API-KEY 管理 → 创建。
+# 大模型情感判定（默认 DeepSeek；兼容任何 OpenAI 格式接口）。
+# DeepSeek 申请: https://platform.deepseek.com/ → API Keys → 创建（充值10元可用很久）
+# 通义千问: LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1 + DASHSCOPE_API_KEY + LLM_MODEL=qwen-turbo
 # 留空则自动降级为 SnowNLP 判定（准确率较低）。
-DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
-LLM_MODEL = os.environ.get("LLM_MODEL", "qwen-turbo")
-LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+LLM_MODEL = os.environ.get("LLM_MODEL", "deepseek-chat")
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1")
 
 NEG_THRESHOLD = 0.4   # SnowNLP 情感分低于此值判为负面（仅降级模式使用）
 HIGH_LIKES = 2500     # 负面且点赞超过此值 → 高风险
@@ -273,8 +274,8 @@ def analyze(file_path, keywords):
                     except json.JSONDecodeError:
                         continue
 
-    use_llm = bool(DASHSCOPE_API_KEY)
-    log(f"情感判定引擎: {'通义千问 ' + LLM_MODEL if use_llm else 'SnowNLP（未配置 DASHSCOPE_API_KEY，准确率较低；申请免费 Key 见 SETUP.md）'}")
+    use_llm = bool(LLM_API_KEY)
+    log(f"情感判定引擎: {'大模型 ' + LLM_MODEL + '（' + LLM_BASE_URL.replace('https://','').split('/')[0] + '）' if use_llm else 'SnowNLP（未配置 LLM_API_KEY，准确率较低；推荐配置 DeepSeek Key，见 SETUP.md）'}")
 
     for n in rows:
         if not isinstance(n, dict):
@@ -298,7 +299,7 @@ def analyze(file_path, keywords):
         if use_llm:
             try:
                 verdict = llm_sentiment(text_for_score)
-                time.sleep(1.5)  # 主动限速，避开免费额度 QPS 限制
+                time.sleep(0.3)  # 轻微限速，礼貌调用
             except Exception as e:
                 log(f"  大模型判定失败（{str(e)[:60]}），本篇降级 SnowNLP")
                 verdict = snownlp_sentiment(text_for_score)
