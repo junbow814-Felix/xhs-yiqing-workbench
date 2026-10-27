@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-monitor.py — 小红书舆情一键采集：MediaCrawler 抓取 → SnowNLP 情感分析 → 写入工作台数据库
+monitor.py — 小红书舆情一键采集：MediaCrawler 抓取 → 大模型/SnowNLP 情感分析 → 写入工作台数据库
 用法：
     python3 monitor.py           # 全流程：采集最新笔记 + 分析 + 入库
     python3 monitor.py --skip-crawl  # 跳过采集，只分析已有数据并入库（调试用）
@@ -27,12 +27,65 @@ except ImportError:
     print("缺少 snownlp，请运行: pip install requests snownlp")
     sys.exit(1)
 
+
+# ---------- 大模型情感判定 ----------
+
+def llm_sentiment(text: str) -> dict:
+    """用通义千问判定情感。返回 {sent, reason, engine}。失败抛异常由调用方降级。"""
+    prompt = (
+        "你是小红书舆情分析专家。判断下面这篇笔记对品牌/产品的情感倾向。\n"
+        "只输出一行 JSON（不要多余文字），格式：\n"
+        '{"sent": "neg|neu|pos", "reason": "不超过30字的判断依据"}\n'
+        "注意：种草推荐、好评、晒效果好 = pos；吐槽、避雷、投诉、质疑 = neg；"
+        "测评中立、求推荐、无明显倾向 = neu。注意识别反讽和网络流行语的真实含义。\n\n"
+        f"笔记内容：\n{text[:800]}"
+    )
+    r = requests.post(
+        f"{LLM_BASE_URL}/chat/completions",
+        headers={"Authorization": f"Bearer {DASHSCOPE_API_KEY}"},
+        json={
+            "model": LLM_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+        },
+        timeout=30,
+    )
+    r.raise_for_status()
+    content = r.json()["choices"][0]["message"]["content"].strip()
+    # 提取 JSON（兼容模型输出 markdown 代码块包裹）
+    import re
+    m = re.search(r"\{.*\}", content, re.S)
+    if not m:
+        raise ValueError(f"模型输出无法解析: {content[:100]}")
+    d = json.loads(m.group(0))
+    sent = d.get("sent")
+    if sent not in ("neg", "neu", "pos"):
+        raise ValueError(f"sent 值非法: {sent}")
+    return {"sent": sent, "reason": str(d.get("reason", ""))[:60], "engine": f"大模型({LLM_MODEL})"}
+
+
+def snownlp_sentiment(text: str) -> dict:
+    """降级方案：SnowNLP 打分。返回 {sent, reason, engine}。"""
+    try:
+        score = SnowNLP(text).sentiments  # 0~1，越低越负面
+    except Exception:
+        score = 0.5
+    sent = "neg" if score < NEG_THRESHOLD else ("pos" if score > 0.6 else "neu")
+    return {"sent": sent, "reason": f"SnowNLP情感分 {score:.2f}", "engine": "SnowNLP"}
+
 # ========== 配置区（安装时会自动填好，也可手动改） ==========
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://tqczpfzzlgtkrttndxlf.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRxY3pwZnp6bGd0a3J0dG5keGxmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMwOTUxMDEsImV4cCI6MjEwODY3MTEwMX0.9uA6lKFGlma0LZRRQyfC9iLLRXKoMjaZMMcWkT8wuL0")
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 MEDIA_CRAWLER_DIR = os.environ.get("MEDIA_CRAWLER_DIR", "MediaCrawler")
 
-NEG_THRESHOLD = 0.4   # SnowNLP 情感分低于此值判为负面
+# 大模型情感判定（通义千问，兼容 OpenAI 接口格式）。
+# 申请免费 Key: https://bailian.console.aliyun.com/ → API-KEY 管理 → 创建。
+# 留空则自动降级为 SnowNLP 判定（准确率较低）。
+DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
+LLM_MODEL = os.environ.get("LLM_MODEL", "qwen-plus")
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+
+NEG_THRESHOLD = 0.4   # SnowNLP 情感分低于此值判为负面（仅降级模式使用）
 HIGH_LIKES = 2500     # 负面且点赞超过此值 → 高风险
 MID_LIKES = 800       # 负面且点赞超过此值 → 中风险
 # ===========================================================
@@ -213,6 +266,9 @@ def analyze(file_path, keywords):
                     except json.JSONDecodeError:
                         continue
 
+    use_llm = bool(DASHSCOPE_API_KEY)
+    log(f"情感判定引擎: {'通义千问 ' + LLM_MODEL if use_llm else 'SnowNLP（未配置 DASHSCOPE_API_KEY，准确率较低；申请免费 Key 见 SETUP.md）'}")
+
     for n in rows:
         if not isinstance(n, dict):
             continue
@@ -226,15 +282,22 @@ def analyze(file_path, keywords):
             continue
         desc = (n.get("desc") or "").strip()
         hot_comments = comments_map.get(nid, [])
-        # 情感分析文本：标题 + 正文 + 热评（权重最高的信息源）
+        # 情感分析文本：标题 + 正文 + 热评
         text_for_score = f"{title}。{desc[:300]}"
         if hot_comments:
             text_for_score += "。" + "。".join(c[:80] for c in hot_comments[:3])
-        try:
-            score = SnowNLP(text_for_score).sentiments  # 0~1，越低越负面
-        except Exception:
-            score = 0.5
-        sent = "neg" if score < NEG_THRESHOLD else ("pos" if score > 0.6 else "neu")
+
+        # 情感判定：大模型优先，失败自动降级 SnowNLP
+        if use_llm:
+            try:
+                verdict = llm_sentiment(text_for_score)
+            except Exception as e:
+                log(f"  大模型判定失败（{str(e)[:60]}），本篇降级 SnowNLP")
+                verdict = snownlp_sentiment(text_for_score)
+        else:
+            verdict = snownlp_sentiment(text_for_score)
+        sent = verdict["sent"]
+
         likes = int(n.get("liked_count") or 0)
         risk = "无"
         if sent == "neg":
@@ -243,7 +306,13 @@ def analyze(file_path, keywords):
         kw = n.get("source_keyword") or n.get("keyword") or ""
         if not kw:
             kw = next((k for k in keywords if k in title or k in desc), keywords[0] if keywords else "未分类")
-        excerpt = desc[:2000]
+
+        # 笔记原文链接：优先用采集的 note_url，否则用 note_id 构造
+        note_url = (n.get("note_url") or "").strip()
+        if not note_url and nid:
+            note_url = f"https://www.xiaohongshu.com/explore/{nid}"
+
+        excerpt = f"【{verdict['engine']}判定：{sent_name_cn(sent)}】依据：{verdict['reason']}\n\n{desc[:1800]}"
         if hot_comments:
             excerpt += ("\n\n—— 热评（采集）——\n" + "\n".join(f"· {c[:100]}" for c in hot_comments[:5]))
         items.append({
@@ -251,16 +320,21 @@ def analyze(file_path, keywords):
             "title": title[:300],
             "author": (n.get("nickname") or "")[:100],
             "sent": sent,
-            "score": round(score, 3),  # 仅用于本地日报，不写入数据库
+            "score": 0,  # 兼容日报字段
             "likes": likes,
             "comments": int(n.get("comment_count") or 0),
             "collects": int(n.get("collected_count") or 0),
             "risk": risk,
             "excerpt": excerpt,
             "source": "real",
+            "note_url": note_url,
             "published_at": normalize_time(n.get("time") or n.get("publish_time")),
         })
     return items
+
+
+def sent_name_cn(s: str) -> str:
+    return {"neg": "负面", "neu": "中性", "pos": "正面"}.get(s, s)
 
 
 def push_to_workbench(items):
@@ -270,7 +344,7 @@ def push_to_workbench(items):
         return
     # 只发数据库表里存在的列，多余字段（如 score）全部剔除
     DB_FIELDS = {"kw", "title", "author", "sent", "likes", "comments",
-                 "collects", "risk", "excerpt", "source", "published_at"}
+                 "collects", "risk", "excerpt", "source", "note_url", "published_at"}
     rows = [{k: v for k, v in it.items() if k in DB_FIELDS} for it in items]
     # 清空上一批
     r = requests.delete(f"{SUPABASE_URL}/rest/v1/notes?source=eq.real", headers=HDRS, timeout=30)
@@ -301,7 +375,7 @@ def save_daily_report(items):
     ]
     top = sorted(neg, key=lambda x: -x["likes"])[:3]
     for i, t in enumerate(top, 1):
-        lines.append(f'{i}. {t["title"]}（赞 {t["likes"]} | 风险 {t["risk"]} | 情感分 {t["score"]}）')
+        lines.append(f'{i}. {t["title"]}（赞 {t["likes"]} | 风险 {t["risk"]}）')
     if not top:
         lines.append("今日无显著负面笔记")
     if high:
