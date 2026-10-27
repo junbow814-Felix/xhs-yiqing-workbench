@@ -9,7 +9,6 @@ monitor.py — 小红书舆情一键采集：MediaCrawler 抓取 → SnowNLP 情
 """
 import argparse
 import datetime
-import glob
 import json
 import os
 import subprocess
@@ -104,59 +103,137 @@ def run_crawler():
 
 
 def find_latest_data():
-    """找 MediaCrawler 最新输出的一批 JSON"""
-    pattern = os.path.join(MEDIA_CRAWLER_DIR, "data", "xhs", "**", "*.json")
-    files = sorted(glob.glob(pattern, recursive=True), key=os.path.getmtime)
-    if not files:
-        # 兼容部分版本直接落 data/xhs/*.json
-        pattern2 = os.path.join(MEDIA_CRAWLER_DIR, "data", "xhs", "*.json")
-        files = sorted(glob.glob(pattern2), key=os.path.getmtime)
-    return files[-1] if files else None
+    """找 MediaCrawler 最新产出的笔记数据文件（jsonl 优先，兼容 csv/json）。
+    新版路径: data/xhs/jsonl/search_contents_<日期>.jsonl
+    """
+    base = os.path.join(MEDIA_CRAWLER_DIR, "data", "xhs")
+    if not os.path.isdir(base):
+        return None
+    candidates = []
+    for root, _dirs, files in os.walk(base):
+        for f in files:
+            # 只要笔记正文文件，排除评论文件
+            if "contents" not in f:
+                continue
+            if f.endswith((".jsonl", ".json", ".csv")):
+                p = os.path.join(root, f)
+                candidates.append((os.path.getmtime(p), p))
+    if not candidates:
+        return None
+    candidates.sort()
+    return candidates[-1][1]
+
+
+def find_comments_files():
+    """找同目录下同一天产出的评论文件（用于丰富情感分析文本）"""
+    data_file = find_latest_data()
+    if not data_file:
+        return []
+    root = os.path.dirname(data_file)
+    stem_date = data_file.rsplit("_", 1)[-1].split(".")[0]  # 如 2026-10-27
+    cmts = []
+    for f in os.listdir(root):
+        if "comments" in f and stem_date in f:
+            cmts.append(os.path.join(root, f))
+    return cmts
+
+
+def load_comments_map(comment_files):
+    """note_id -> 热评文本列表（取点赞最高的前 5 条）"""
+    m = {}
+    for path in comment_files:
+        with open(path, encoding="utf-8") as fp:
+            for line in fp:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    c = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                nid = c.get("note_id")
+                if not nid:
+                    continue
+                try:
+                    likes = int(c.get("like_count") or 0)
+                except (TypeError, ValueError):
+                    likes = 0
+                m.setdefault(nid, []).append((likes, c.get("content") or ""))
+    out = {}
+    for nid, lst in m.items():
+        lst.sort(key=lambda x: -x[0])
+        out[nid] = [t for _, t in lst[:5] if t]
+    return out
 
 
 def analyze(file_path, keywords):
-    """读取采集结果，做情感分析 + 风险分级"""
+    """读取采集结果（jsonl/csv/json），做情感分析 + 风险分级（正文 + 热评一起分析）"""
+    comments_map = load_comments_map(find_comments_files())
     items = []
-    with open(file_path, encoding="utf-8") as fp:
-        for line in fp:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                n = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            title = (n.get("title") or (n.get("desc") or "")[:50] or "").strip()
-            if not title:
-                continue
-            text_for_score = f"{title}。{(n.get('desc') or '')[:200]}"
-            try:
-                score = SnowNLP(text_for_score).sentiments  # 0~1，越低越负面
-            except Exception:
-                score = 0.5
-            sent = "neg" if score < NEG_THRESHOLD else ("pos" if score > 0.6 else "neu")
-            likes = int(n.get("liked_count") or 0)
-            risk = "无"
-            if sent == "neg":
-                risk = "高" if likes > HIGH_LIKES else ("中" if likes > MID_LIKES else "低")
-            # 关键词归属：优先用采集源字段，否则按标题匹配
-            kw = n.get("source_keyword") or n.get("keyword") or ""
-            if not kw:
-                kw = next((k for k in keywords if k in title), keywords[0] if keywords else "未分类")
-            items.append({
-                "kw": kw,
-                "title": title[:300],
-                "author": (n.get("nickname") or "")[:100],
-                "sent": sent,
-                "score": round(score, 3),
-                "likes": likes,
-                "comments": int(n.get("total_comment_count") or n.get("comment_count") or 0),
-                "collects": int(n.get("collected_count") or 0),
-                "risk": risk,
-                "excerpt": (n.get("desc") or "")[:2000],
-                "source": "real",
-                "published_at": n.get("publish_time") or n.get("time") or datetime.datetime.now().isoformat(),
-            })
+    seen_ids = set()
+
+    rows = []
+    if file_path.endswith(".csv"):
+        import csv as _csv
+        with open(file_path, encoding="utf-8-sig") as fp:
+            rows = list(_csv.DictReader(fp))
+    else:
+        with open(file_path, encoding="utf-8") as fp:
+            for line in fp:
+                line = line.strip()
+                if line:
+                    try:
+                        rows.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+
+    for n in rows:
+        if not isinstance(n, dict):
+            continue
+        nid = n.get("note_id")
+        if nid and nid in seen_ids:
+            continue  # 追加写可能重复，去重
+        if nid:
+            seen_ids.add(nid)
+        title = (n.get("title") or (n.get("desc") or "")[:50] or "").strip()
+        if not title:
+            continue
+        desc = (n.get("desc") or "").strip()
+        hot_comments = comments_map.get(nid, [])
+        # 情感分析文本：标题 + 正文 + 热评（权重最高的信息源）
+        text_for_score = f"{title}。{desc[:300]}"
+        if hot_comments:
+            text_for_score += "。" + "。".join(c[:80] for c in hot_comments[:3])
+        try:
+            score = SnowNLP(text_for_score).sentiments  # 0~1，越低越负面
+        except Exception:
+            score = 0.5
+        sent = "neg" if score < NEG_THRESHOLD else ("pos" if score > 0.6 else "neu")
+        likes = int(n.get("liked_count") or 0)
+        risk = "无"
+        if sent == "neg":
+            risk = "高" if likes > HIGH_LIKES else ("中" if likes > MID_LIKES else "低")
+        # 关键词归属：优先用采集源字段，否则按标题/正文匹配
+        kw = n.get("source_keyword") or n.get("keyword") or ""
+        if not kw:
+            kw = next((k for k in keywords if k in title or k in desc), keywords[0] if keywords else "未分类")
+        excerpt = desc[:2000]
+        if hot_comments:
+            excerpt += ("\n\n—— 热评（采集）——\n" + "\n".join(f"· {c[:100]}" for c in hot_comments[:5]))
+        items.append({
+            "kw": kw,
+            "title": title[:300],
+            "author": (n.get("nickname") or "")[:100],
+            "sent": sent,
+            "score": round(score, 3),
+            "likes": likes,
+            "comments": int(n.get("comment_count") or 0),
+            "collects": int(n.get("collected_count") or 0),
+            "risk": risk,
+            "excerpt": excerpt,
+            "source": "real",
+            "published_at": n.get("time") or n.get("publish_time") or datetime.datetime.now().isoformat(),
+        })
     return items
 
 
