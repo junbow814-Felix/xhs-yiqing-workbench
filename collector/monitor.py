@@ -3,8 +3,8 @@
 """
 monitor.py — 小红书舆情一键采集：MediaCrawler 抓取 → SnowNLP 情感分析 → 写入工作台数据库
 用法：
-    python monitor.py            # 全流程：采集最新笔记 + 分析 + 入库
-    python monitor.py --skip-crawl  # 跳过采集，只分析已有数据并入库（调试用）
+    python3 monitor.py           # 全流程：采集最新笔记 + 分析 + 入库
+    python3 monitor.py --skip-crawl  # 跳过采集，只分析已有数据并入库（调试用）
 前提：首次运行前请先阅读 SETUP.md 完成环境安装与小红书扫码登录。
 """
 import argparse
