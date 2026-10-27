@@ -312,9 +312,12 @@ def save_daily_report(items):
         f"{SUPABASE_URL}/rest/v1/reports",
         headers={**HDRS, "Prefer": "resolution=merge-duplicates"},
         json=[{"rep_date": today, "content": content, "summary": summary}],
+        params={"on_conflict": "rep_date"},
         timeout=30,
     )
-    r.raise_for_status()
+    if r.status_code >= 400:
+        log(f"日报写入失败 HTTP {r.status_code}: {r.text[:200]}（不影响笔记数据，可稍后在工作台手动生成）")
+        return
     log("日报已写入工作台「上报中心」")
 
 
