@@ -30,8 +30,8 @@ except ImportError:
 
 # ---------- 大模型情感判定 ----------
 
-def llm_sentiment(text: str) -> dict:
-    """用通义千问判定情感。返回 {sent, reason, engine}。失败抛异常由调用方降级。"""
+def llm_sentiment(text: str, retry: int = 3) -> dict:
+    """用通义千问判定情感。返回 {sent, reason, engine}。限流时自动等待重试。"""
     prompt = (
         "你是小红书舆情分析专家。判断下面这篇笔记对品牌/产品的情感倾向。\n"
         "只输出一行 JSON（不要多余文字），格式：\n"
@@ -40,28 +40,35 @@ def llm_sentiment(text: str) -> dict:
         "测评中立、求推荐、无明显倾向 = neu。注意识别反讽和网络流行语的真实含义。\n\n"
         f"笔记内容：\n{text[:800]}"
     )
-    r = requests.post(
-        f"{LLM_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {DASHSCOPE_API_KEY}"},
-        json={
-            "model": LLM_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1,
-        },
-        timeout=30,
-    )
-    r.raise_for_status()
-    content = r.json()["choices"][0]["message"]["content"].strip()
-    # 提取 JSON（兼容模型输出 markdown 代码块包裹）
-    import re
-    m = re.search(r"\{.*\}", content, re.S)
-    if not m:
-        raise ValueError(f"模型输出无法解析: {content[:100]}")
-    d = json.loads(m.group(0))
-    sent = d.get("sent")
-    if sent not in ("neg", "neu", "pos"):
-        raise ValueError(f"sent 值非法: {sent}")
-    return {"sent": sent, "reason": str(d.get("reason", ""))[:60], "engine": f"大模型({LLM_MODEL})"}
+    for attempt in range(retry):
+        r = requests.post(
+            f"{LLM_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {DASHSCOPE_API_KEY}"},
+            json={
+                "model": LLM_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+            },
+            timeout=30,
+        )
+        if r.status_code == 429 or (r.status_code == 400 and "limit_requests" in r.text):
+            wait = 65 * (attempt + 1)
+            log(f"  触发限流，等待 {wait} 秒后重试（第 {attempt + 1}/{retry} 次）…")
+            time.sleep(wait)
+            continue
+        r.raise_for_status()
+        content = r.json()["choices"][0]["message"]["content"].strip()
+        # 提取 JSON（兼容模型输出 markdown 代码块包裹）
+        import re
+        m = re.search(r"\{.*\}", content, re.S)
+        if not m:
+            raise ValueError(f"模型输出无法解析: {content[:100]}")
+        d = json.loads(m.group(0))
+        sent = d.get("sent")
+        if sent not in ("neg", "neu", "pos"):
+            raise ValueError(f"sent 值非法: {sent}")
+        return {"sent": sent, "reason": str(d.get("reason", ""))[:60], "engine": f"大模型({LLM_MODEL})"}
+    raise RuntimeError("大模型限流重试次数用尽")
 
 
 def snownlp_sentiment(text: str) -> dict:
@@ -75,14 +82,14 @@ def snownlp_sentiment(text: str) -> dict:
 
 # ========== 配置区（安装时会自动填好，也可手动改） ==========
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://tqczpfzzlgtkrttndxlf.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRxY3pwZnp6bGd0a3J0dG5keGxmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMwOTUxMDEsImV4cCI6MjEwODY3MTEwMX0.9uA6lKFGlma0LZRRQyfC9iLLRXKoMjaZMMcWkT8wuL0")
 MEDIA_CRAWLER_DIR = os.environ.get("MEDIA_CRAWLER_DIR", "MediaCrawler")
 
 # 大模型情感判定（通义千问，兼容 OpenAI 接口格式）。
 # 申请免费 Key: https://bailian.console.aliyun.com/ → API-KEY 管理 → 创建。
 # 留空则自动降级为 SnowNLP 判定（准确率较低）。
 DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
-LLM_MODEL = os.environ.get("LLM_MODEL", "qwen-plus")
+LLM_MODEL = os.environ.get("LLM_MODEL", "qwen-turbo")
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
 NEG_THRESHOLD = 0.4   # SnowNLP 情感分低于此值判为负面（仅降级模式使用）
@@ -291,6 +298,7 @@ def analyze(file_path, keywords):
         if use_llm:
             try:
                 verdict = llm_sentiment(text_for_score)
+                time.sleep(1.5)  # 主动限速，避开免费额度 QPS 限制
             except Exception as e:
                 log(f"  大模型判定失败（{str(e)[:60]}），本篇降级 SnowNLP")
                 verdict = snownlp_sentiment(text_for_score)
