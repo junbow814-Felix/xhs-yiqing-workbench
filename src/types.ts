@@ -19,6 +19,7 @@ export interface Note {
   risk: string;
   excerpt: string;
   source: "mock" | "real";
+  noteUrl?: string;
 }
 
 export interface Report {
@@ -53,6 +54,7 @@ export interface AppState {
     risk: string;
     excerpt: string | null;
     source?: string;
+    note_url?: string | null;
     published_at: string;
   }>;
 }
