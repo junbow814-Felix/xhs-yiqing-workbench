@@ -323,6 +323,28 @@ export default function App() {
     toast(`已导出 ${list.length} 条笔记（CSV）`);
   };
 
+  const [syncing, setSyncing] = useState(false);
+
+  const manualSync = async () => {
+    setSyncing(true);
+    try {
+      const before = state?.realNotes.length ?? -1;
+      const data = await getState();
+      setState(data);
+      setLoadError(false);
+      const after = data.realNotes.length;
+      if (before >= 0 && after !== before) {
+        toast(after > before ? `已同步：新增 ${after - before} 篇采集笔记` : "已同步：采集笔记有更新");
+      } else {
+        toast("已同步最新团队数据");
+      }
+    } catch {
+      toast("同步失败，请稍后再试");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   if (!ready) return <SetupScreen onSaved={() => setReady(true)} />;
 
   const isReal = (state?.realNotes.length ?? 0) > 0;
@@ -346,6 +368,14 @@ export default function App() {
         <span className={isReal ? "badge-real" : "badge-demo"}>
           {isReal ? `真实采集 · ${state?.realNotes.length ?? 0} 篇` : "演示数据 · 采集链路未接入"}
         </span>
+        <button
+          className="btn btn-ghost btn-sm sync-btn"
+          onClick={manualSync}
+          disabled={syncing}
+          title="立即从团队数据库拉取最新采集数据"
+        >
+          {syncing ? "同步中…" : "↻ 立即同步"}
+        </button>
       </header>
 
       <nav className="tabs">
