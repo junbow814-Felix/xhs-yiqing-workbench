@@ -1,77 +1,107 @@
-# 采集环境安装指引（Windows · 零基础版）
+# 采集环境安装指引（macOS 版）
 
-> 目标：在你的电脑上装好采集环境，之后 **双击「立即采集.bat」= 随时抓最新舆情**，**每天 8 点自动抓**。
-> 全程只需要你：装 2 个软件 + 扫 1 次码。每一步都有"怎么确认成功了"。
+> 目标：在你的 Mac 上装好采集环境，之后 **双击/一条命令= 随时抓最新舆情**，**每天 8 点自动抓**。
+> 全程只需要：装 2 个工具 + 扫 1 次码。每一步都有"怎么确认成功了"。
 
-## 你需要准备的（一次性）
+## 第 0 步：把 collector 文件夹放到 Mac 上
 
-### 第 0 步：把 collector 文件夹下载到电脑
+打开终端（聚焦搜索 `终端` / `Terminal`，或 应用程序→实用工具→终端），执行：
 
-在本页面（GitHub 仓库）点绿色的 **Code** 按钮 → **Download ZIP** → 解压后进入 `collector` 文件夹。
-（或者直接把整个 `collector` 文件夹下载到你电脑的任意位置，比如 `D:\舆情监控\`）
+```bash
+# 建个目录并下载（二选一：git 或 网页下载 ZIP）
+mkdir -p ~/xhs-monitor && cd ~/xhs-monitor
+git clone https://github.com/junbow814-Felix/xhs-yiqing-workbench.git
+cd xhs-yiqing-workbench/collector
+```
 
-### 第 1 步：确认电脑上有 Python（3 分钟）
+（如果没装 git，用网页方式：浏览器打开仓库 → Code → Download ZIP → 解压后把 `collector` 文件夹拖到 `~/xhs-monitor/` 下）
 
-1. 按 `Win + R`，输入 `cmd` 回车，打开黑色命令行窗口
-2. 输入 `python --version` 回车
-3. **看到 `Python 3.9` 以上**（如 Python 3.11.5）→ ✅ 继续
-4. **提示"不是内部或外部命令"** → 去 https://www.python.org/downloads/ 下载安装：
-   - 安装时**务必勾选最底下的 "Add Python to PATH"**（重要！）
-   - 装完**重新打开**命令行窗口再试一次
+## 第 1 步：安装基础工具（5 分钟）
 
-### 第 2 步：确认电脑上有 Git（1 分钟）
+在终端逐条执行（遇到要密码就输开机密码，遇到要确认就回车）：
 
-同样在命令行输入 `git --version`：
-- 有版本号 → ✅ 继续
-- 没有 → 去 https://git-scm.com/download/win 下载安装（全部默认下一步）
+```bash
+# 安装 Homebrew（Mac 的软件管家，已有就跳过）
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-### 第 3 步：一键配置（10 分钟，全自动）
+# 安装 python 和 git
+brew install python git
+```
 
-进入 `collector` 文件夹，**双击「一键配置.bat」**。它会自动：
+**确认成功**：
+
+```bash
+python3 --version    # 应显示 Python 3.9 以上
+git --version        # 应显示 git version 2.x
+```
+
+## 第 2 步：一键配置（10 分钟）
+
+```bash
+cd ~/xhs-monitor/xhs-yiqing-workbench/collector   # 或你解压的 collector 目录
+bash setup-mac.sh
+```
+
+脚本会自动：
 1. 安装 Python 依赖（requests、snownlp 情感分析库）
-2. 使用已内置的数据库密钥（无需你操作）
-3. 下载 MediaCrawler 爬虫到同目录（约几分钟，取决于网速）
-4. 安装浏览器内核、运行环境自检
+2. 校验内置的数据库密钥（已配好，无需你操作）
+3. 下载 MediaCrawler 爬虫到同目录并装依赖、装浏览器内核
+4. 运行环境自检
 
-**怎么确认成功**：最后自检应显示 4 个 `[OK]`（登录态那行显示 `[提示]` 是正常的，下一步才扫码）。
+**确认成功**：最后自检显示 `[OK] Python`、`[OK] requests`、`[OK] snownlp`、`[OK] MediaCrawler`、`[OK] 工作台数据库连接正常`。登录态显示 `[提示]` 是正常的，下一步才扫码。
 
-### 第 4 步：首次采集 + 扫码登录（3 分钟）
+## 第 3 步：首次采集 + 扫码登录（3 分钟）
 
-**双击「立即采集.bat」**：
-1. 会弹出一个浏览器窗口，显示小红书登录二维码
-2. 用**手机小红书 App 扫码**登录（和平时登录网页版一样）
-3. 之后全自动：抓取你工作台里设置的关键词 → 情感分析 → 写入数据库
+```bash
+python3 monitor.py
+```
 
-**怎么确认成功**：命令行最后显示 `=== 完成！打开工作台即可查看最新舆情 ===`，
-打开工作台 https://junbow814-felix.github.io/xhs-yiqing-workbench/ → 顶部变成绿色「真实采集 · N 篇」，
-且笔记是真实抓取的小红书内容。**登录态会自动缓存，以后不用再扫**。
+1. 会弹出浏览器窗口显示小红书登录二维码
+2. 用**手机小红书 App 扫码**登录（和平时扫网页登录一样）
+3. 之后全自动：读取工作台里的关键词（如"海尔美容仪"）→ 抓取小红书 → SnowNLP 情感分析 → 写入工作台数据库 → 自动生成日报
 
-### 第 5 步（可选）：每天自动采集
+**确认成功**：终端最后显示 `=== 完成！打开工作台即可查看最新舆情 ===`。
+打开 https://junbow814-felix.github.io/xhs-yiqing-workbench/ 点「↻ 立即同步」→
+顶部绿色「真实采集 · N 篇」，笔记是真实小红书内容。**登录态自动缓存，以后不用再扫**。
 
-双击「安装定时任务.bat」→ 以后每天早上 8 点自动采集（电脑开机状态即可）。
-想改时间：命令行运行 `schtasks /delete /tn XhsYiqingMonitor /f` 删除后，改脚本里的 `/st 08:00` 再重跑。
+## 第 4 步（可选）：每天自动采集
 
-## 日常使用
+```bash
+bash install-cron-mac.sh
+```
 
-| 想做什么 | 操作 |
+装好后每天 08:00 自动采集（Mac 开机状态即可）。查看/删除：
+
+```bash
+crontab -l                            # 查看
+crontab -r                            # 删除全部定时任务（慎用）
+```
+
+## 日常使用速查
+
+| 想做什么 | 命令 |
 |---|---|
-| 临时看最新舆情 | 双击「立即采集.bat」，几分钟后打开工作台（或点页面「↻ 立即同步」） |
-| 增删监控关键词 | 在工作台网页上直接加/删，下次采集自动生效（脚本会同步关键词） |
-| 查看采集日志 | `collector` 目录下的 `monitor.log` |
-| 环境出问题 | 双击 `setup_check.py` 或命令行 `python setup_check.py` 自检 |
+| 临时看最新舆情 | `python3 monitor.py`，跑完打开工作台点「↻ 立即同步」 |
+| 增删监控关键词 | 在工作台网页上直接加/删，下次采集自动生效 |
+| 环境自检 | `python3 setup_check.py` |
+| 看采集日志 | `cat monitor.log` |
 
 ## 常见问题
 
 **Q：扫码后报错 / 抓不到数据？**
-A：小红书风控偶尔变严。重启「立即采集.bat」再试；持续失败时删除 `MediaCrawler/browser_data` 文件夹重新扫码。
+A：小红书风控偶尔变严。重跑 `python3 monitor.py`；持续失败时删除 `MediaCrawler/browser_data` 目录后重新扫码。
 
-**Q：公司网络跑不动？**
-A：MediaCrawler 需要访问小红书网页，个别公司内网会拦截，换手机热点试一次即可判断。
+**Q：`brew` 下载很慢或失败？**
+A：网络问题，可换手机热点，或使用国内镜像（终端执行 `export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"` 后重试）。
+
+**Q：弹出"无法验证开发者"？**
+A：系统设置 → 隐私与安全性 → 点「仍要打开」；或终端执行 `sudo spctl --masterdisable` 后再运行。
 
 **Q：合规提醒**
 A：仅供内部舆情监控学习研究，控制采集频率（每天 1 次足够），不抓取用户个人信息，遵守小红书用户协议。
 
-## Mac 用户
+---
 
-逻辑相同：装 `python3` 和 `git`（brew install），把 `.bat` 换成在终端里执行 `python monitor.py`；
-定时任务用 `crontab -e` 添加：`0 8 * * * cd /path/to/collector && python3 monitor.py >> monitor.log 2>&1`
+## Windows 用户
+
+请看仓库 `collector/` 下 Windows 版脚本（一键配置.bat / 立即采集.bat / 安装定时任务.bat）。
