@@ -166,6 +166,32 @@ def load_comments_map(comment_files):
     return out
 
 
+def normalize_time(raw):
+    """把 MediaCrawler 的 time 字段（毫秒时间戳/秒级时间戳/字符串日期）统一转成 ISO 格式"""
+    if raw is None:
+        return datetime.datetime.now().isoformat()
+    # 数字时间戳
+    try:
+        ts = float(raw)
+        if ts > 1e12:      # 毫秒
+            ts /= 1000
+        elif ts > 1e9:     # 秒
+            pass
+        else:
+            raise ValueError
+        return datetime.datetime.fromtimestamp(ts).isoformat()
+    except (TypeError, ValueError):
+        pass
+    # 字符串：尝试常见格式
+    s = str(raw).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S%z"):
+        try:
+            return datetime.datetime.strptime(s, fmt).isoformat()
+        except ValueError:
+            continue
+    return datetime.datetime.now().isoformat()
+
+
 def analyze(file_path, keywords):
     """读取采集结果（jsonl/csv/json），做情感分析 + 风险分级（正文 + 热评一起分析）"""
     comments_map = load_comments_map(find_comments_files())
@@ -232,7 +258,7 @@ def analyze(file_path, keywords):
             "risk": risk,
             "excerpt": excerpt,
             "source": "real",
-            "published_at": n.get("time") or n.get("publish_time") or datetime.datetime.now().isoformat(),
+            "published_at": normalize_time(n.get("time") or n.get("publish_time")),
         })
     return items
 
