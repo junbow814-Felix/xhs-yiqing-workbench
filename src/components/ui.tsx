@@ -52,9 +52,20 @@ export function Drawer({
               <div className="kv"><span className="k">收藏</span><span>{note.collects} 次</span></div>
               <div className="kv"><span className="k">数据来源</span><span>{note.source === "real" ? "真实采集" : "演示数据"}</span></div>
               <div className="excerpt">{note.excerpt || "（暂无摘要）"}</div>
-              <div style={{ fontSize: 12, color: "#9aa0a8" }}>
+              {note.noteUrl && (
+                <a
+                  className="btn btn-primary"
+                  style={{ display: "inline-block", marginTop: 4, textDecoration: "none" }}
+                  href={note.noteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  ↗ 在小红书查看原文
+                </a>
+              )}
+              <div style={{ fontSize: 12, color: "#9aa0a8", marginTop: 10 }}>
                 {note.source === "real"
-                  ? "数据来自采集链路写入，每日自动更新。"
+                  ? "数据来自采集链路写入，每日自动更新。摘要开头为 AI 情感判定依据。"
                   : "接入采集链路后，这里将展示真实笔记正文、评论区情感分布与原文链接。"}
               </div>
             </>
