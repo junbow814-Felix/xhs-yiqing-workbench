@@ -65,6 +65,7 @@ create table if not exists public.notes (
   risk          text not null default '无',
   excerpt       text not null default '',
   source        text not null default 'real',
+  note_url      text not null default '',
   published_at  timestamptz not null default now()
 );
 alter table public.notes enable row level security;
