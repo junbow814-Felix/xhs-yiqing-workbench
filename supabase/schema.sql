@@ -39,6 +39,25 @@ drop policy if exists "anon full access reports" on public.reports;
 create policy "anon full access reports" on public.reports
   for all to anon, authenticated using (true) with check (true);
 
+
+-- ---------- 手动上报负面笔记 ----------
+create table if not exists public.manual_notes (
+  id          bigint generated always as identity primary key,
+  note_key    text not null unique,
+  url         text not null,
+  kw          text not null default '',
+  title       text not null default '',
+  note_desc   text not null default '',
+  reporter    text not null default '',
+  neg_type    text not null default 'note',
+  status      text not null default '待处理',
+  created_at  timestamptz not null default now()
+);
+alter table public.manual_notes enable row level security;
+drop policy if exists "anon full access manual_notes" on public.manual_notes;
+create policy "anon full access manual_notes" on public.manual_notes
+  for all to anon, authenticated using (true) with check (true);
+
 -- ---------- 上报设置（单行，id=1）----------
 create table if not exists public.settings (
   id               int primary key default 1,
