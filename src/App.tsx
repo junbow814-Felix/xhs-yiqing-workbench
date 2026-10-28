@@ -192,6 +192,7 @@ export default function App() {
         noteUrl: (n as { note_url?: string | null }).note_url || undefined,
         firstSeen: (n as { first_seen?: string | null }).first_seen ?? undefined,
         lastSeen: (n as { last_seen?: string | null }).last_seen ?? undefined,
+        archived: (n as { archived?: boolean | null }).archived ?? false,
       }));
     }
     return genMockNotes(state.keywords);
