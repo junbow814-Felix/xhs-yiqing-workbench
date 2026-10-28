@@ -153,6 +153,17 @@ export function Alerts({
                   {s === "已闭环" && (
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onSetStatus(n.key, "待处理")}>重新打开</button>
                   )}
+                  {n.noteUrl && (
+                    <a
+                      className="btn btn-primary btn-sm"
+                      style={{ textDecoration: "none" }}
+                      href={n.noteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      ↗ 原文
+                    </a>
+                  )}
                   <button className="btn btn-ghost btn-sm" onClick={() => onOpenNote(n)}>详情</button>
                 </div>
               </div>
