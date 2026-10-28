@@ -224,26 +224,38 @@ def judge_comments(comments, own_brands):
 # 采集（双批：综合 + 最新）
 # ============================================================
 
-def set_config(kv):
-    """往 MediaCrawler base_config.py 写入/更新配置项"""
-    cfg = os.path.join(MEDIA_CRAWLER_DIR, "config", "base_config.py")
-    if not os.path.exists(cfg):
-        log(f"警告：找不到 {cfg}")
-        return
-    with open(cfg, encoding="utf-8") as f:
-        lines = f.read().split("\n")
-    for key, val in kv.items():
-        new_line = f"{key} = {val}"
-        found = False
-        for i, line in enumerate(lines):
-            if line.strip().startswith(key + " ") or line.strip().startswith(key + "="):
-                lines[i] = new_line
-                found = True
-                break
-        if not found:
-            lines.insert(1, new_line)
-    with open(cfg, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+def set_config(kv, filename="xhs_config.py"):
+    """往 MediaCrawler 的 xhs 配置写入/更新配置项。
+    注意：新版 MediaCrawler 的搜索排序在 config/xhs_config.py 生效（不在 base_config.py），
+    KEYWORDS 等仍写 base_config.py。两个文件都写一遍以保证兼容。"""
+    for fn in ("xhs_config.py", "base_config.py"):
+        cfg = os.path.join(MEDIA_CRAWLER_DIR, "config", fn)
+        if not os.path.exists(cfg):
+            continue
+        with open(cfg, encoding="utf-8") as f:
+            lines = f.read().split("\n")
+        for key, val in kv.items():
+            new_line = f"{key} = {val}"
+            found = False
+            for i, line in enumerate(lines):
+                if line.strip().startswith(key + " ") or line.strip().startswith(key + "="):
+                    # xhs_config.py 可能有多处定义（如被 import * 覆盖），全部替换
+                    if fn == "xhs_config.py":
+                        lines[i] = None
+                        found = True
+                    else:
+                        lines[i] = new_line
+                        found = True
+                        break
+            if fn == "xhs_config.py":
+                lines = [l for l in lines if l is not None]
+                # 在文件头部（import 之后）插入生效值
+                lines.insert(0, new_line)
+            elif not found:
+                lines.insert(1, new_line)
+        with open(cfg, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        log(f"  配置已写入 {fn}")
 
 
 def fetch_keywords():
@@ -270,24 +282,25 @@ def build_own_brands(keyword, manual_brands):
 
 
 def run_crawl_batches(keywords):
-    """双批采集：第1批综合排序，第2批最新排序。keywords: {名: 白名单}"""
+    """双批采集：第1批热度排序（主流曝光面），第2批最新发布排序（捕获新笔记）。
+    keywords: {名: 白名单}。排序写入 xhs_config.py（该版本实际生效的配置文件）。"""
     set_config({
         "KEYWORDS": f'"{",".join(keywords)}"',
         "CRAWLER_MAX_NOTES_COUNT": str(NOTES_PER_BATCH),
         "ENABLE_GET_COMMENTS": "True",
         "SAVE_DATA_OPTION": '"jsonl"',
-        "SORT_TYPE": '""',
+        "SORT_TYPE": '"popularity_descending"',
     })
-    log(f"第 1 批采集：综合排序，每词最多 {NOTES_PER_BATCH} 篇…")
+    log(f"第 1 批采集：热度排序（主流曝光），每词最多 {NOTES_PER_BATCH} 篇…")
     subprocess.run([sys.executable, "main.py", "--platform", "xhs", "--lt", "qrcode", "--type", "search"],
                    cwd=MEDIA_CRAWLER_DIR)
     time.sleep(5)
     set_config({"SORT_TYPE": '"time_descending"'})
-    log("第 2 批采集：最新发布排序…")
+    log("第 2 批采集：最新发布排序（捕获近期新笔记）…")
     subprocess.run([sys.executable, "main.py", "--platform", "xhs", "--lt", "qrcode", "--type", "search"],
                    cwd=MEDIA_CRAWLER_DIR)
-    # 还原排序配置，避免影响其他用法
-    set_config({"SORT_TYPE": '""'})
+    # 还原为热度排序（人工单独跑 MediaCrawler 时的默认习惯）
+    set_config({"SORT_TYPE": '"popularity_descending"'})
 
 
 # ============================================================
