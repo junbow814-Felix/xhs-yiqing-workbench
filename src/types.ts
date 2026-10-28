@@ -44,9 +44,23 @@ export interface Settings {
   dingtalk_secret?: string;
 }
 
+export interface ManualNote {
+  id: number;
+  note_key: string;
+  url: string;
+  kw: string;
+  title: string;
+  note_desc: string;
+  reporter: string;
+  neg_type: string; // note/comment
+  status: string;
+  created_at: string;
+}
+
 export interface AppState {
   keywords: Keyword[];
   alerts: Record<string, string>;
+  manualNotes: ManualNote[];
   reports: Report[];
   settings: Settings;
   realNotes: Array<{
