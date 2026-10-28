@@ -68,7 +68,7 @@ export async function getState(): Promise<AppState> {
     c.from("settings").select("report_time,channel,webhook").eq("id", 1).maybeSingle(),
     c
       .from("notes")
-      .select("id,kw,title,author,sent,likes,comments,collects,risk,excerpt,source,note_url,published_at")
+      .select("id,kw,title,author,sent,note_sent,comment_sent,neg_source,shill_count,shill_brands,comment_neg_ratio,likes,comments,collects,risk,excerpt,source,note_url,published_at")
       .order("likes", { ascending: false })
       .limit(500),
   ]);
