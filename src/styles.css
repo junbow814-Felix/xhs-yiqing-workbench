@@ -80,6 +80,7 @@ canvas{width:100%;display:block}
 .chip-neu{background:#f1f2f4;color:#6b7280}
 .chip-kw{background:var(--red-soft);color:var(--red)}
 .chip-risk{background:#fff3e0;color:#b45309}
+.chip-shill{background:#f3e8ff;color:#7c3aed;font-weight:700}
 .note .nums{margin-left:auto;font-size:12px;color:var(--sub);display:flex;gap:10px}
 /* alerts */
 .alert-item{display:flex;align-items:flex-start;gap:12px;border:1px solid var(--line);border-left:4px solid var(--neg);border-radius:12px;padding:14px;background:#fff;margin-bottom:10px;flex-wrap:wrap}
