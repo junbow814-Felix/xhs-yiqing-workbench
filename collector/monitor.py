@@ -472,6 +472,7 @@ def analyze_all(contents, comments, keywords):
         excerpt = "\n".join(ex_lines)[:4000]
 
         items.append({
+            "note_id": nid,
             "kw": kw,
             "title": title[:300],
             "author": (n.get("nickname") or "")[:100],
@@ -501,47 +502,94 @@ def analyze_all(contents, comments, keywords):
 DB_FIELDS = {"kw", "title", "author", "sent", "note_sent", "comment_sent", "neg_source",
              "shill_count", "shill_brands", "comment_neg_ratio", "likes", "comments",
              "collects", "risk", "excerpt", "source", "note_url", "published_at"}
+MERGE_FIELDS = DB_FIELDS - {"kw", "source"}  # 这些字段每次覆盖为最新
 
 
 def push_to_workbench(items):
+    """笔记级合并写入：
+    - 新笔记 → 插入（first_seen/last_seen = 今天）
+    - 已有笔记（note_id 相同）→ 更新判定与互动数，last_seen = 今天
+    - 本次没抓到的旧笔记 → 保留不动（预警状态也不动）
+    预警处理状态（alert_status）跟 note 的业务 key 关联，永不删除。
+    """
     if not items:
         log("没有可写入的数据")
         return
-    rows = [{k: v for k, v in it.items() if k in DB_FIELDS} for it in items]
-    r = requests.delete(f"{SUPABASE_URL}/rest/v1/notes?source=eq.real", headers=HDRS, timeout=30)
-    if r.status_code >= 400:
-        log(f"清空旧数据失败 HTTP {r.status_code}: {r.text[:200]}")
-        sys.exit(1)
-    for i in range(0, len(rows), 50):
-        r = requests.post(f"{SUPABASE_URL}/rest/v1/notes", headers=HDRS,
-                          json=rows[i:i + 50], timeout=30)
-        if r.status_code >= 400:
-            log(f"写入失败 HTTP {r.status_code}: {r.text[:300]}")
-            sys.exit(1)
-    log(f"已写入 {len(rows)} 篇笔记到工作台")
+    today = datetime.date.today().isoformat()
+    c_rows = []
+    for it in items:
+        row = {k: v for k, v in it.items() if k in DB_FIELDS}
+        row["note_id"] = it["note_id"]
+        row["first_seen"] = today
+        row["last_seen"] = today
+        c_rows.append(row)
+
+    # 拉取现有笔记的 note_id -> id 映射
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/notes?select=id,note_id&source=eq.real&limit=1000",
+                     headers=HDRS, timeout=30)
+    r.raise_for_status()
+    existing = {row["note_id"]: row["id"] for row in r.json() if row.get("note_id")}
+
+    inserted = updated = 0
+    for row in c_rows:
+        nid = row.pop("note_id")
+        if nid in existing:
+            # 已有笔记：更新（不含 first_seen）
+            r = requests.patch(
+                f"{SUPABASE_URL}/rest/v1/notes?id=eq.{existing[nid]}",
+                headers=HDRS, json=row, timeout=30)
+            if r.status_code >= 400:
+                log(f"  更新失败 {row['title'][:20]}: HTTP {r.status_code} {r.text[:120]}")
+            else:
+                updated += 1
+        else:
+            row["note_id"] = nid
+            r = requests.post(f"{SUPABASE_URL}/rest/v1/notes",
+                              headers=HDRS, json=row, timeout=30)
+            if r.status_code >= 400:
+                log(f"  插入失败 {row['title'][:20]}: HTTP {r.status_code} {r.text[:120]}")
+            else:
+                inserted += 1
+    log(f"合并写入完成：新增 {inserted} 篇 / 更新 {updated} 篇 / 历史保留（含预警状态）")
 
 
 # ============================================================
 # 日报（含评论区风险章节）+ IM 推送
 # ============================================================
 
+def fetch_notes_for_report():
+    """日报数据源：从数据库取「近 24 小时见过的全部笔记」——汇总前一天至今的全部采集情况"""
+    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/notes?source=eq.real&last_seen=gte.{yesterday}"
+        "&select=kw,title,likes,sent,note_sent,comment_sent,neg_source,shill_count,shill_brands,"
+        "comment_neg_ratio,risk,first_seen,last_seen&limit=500",
+        headers=HDRS, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
 def build_report(items):
     today = datetime.date.today().isoformat()
     neg = [x for x in items if x["sent"] == "neg"]
     note_neg = [x for x in items if x["neg_source"] in ("note", "both")]
     cmt_neg = [x for x in items if x["neg_source"] in ("comment", "both")]
-    shill_notes = [x for x in items if x["shill_count"] >= 1]
-    shill_total = sum(x["shill_count"] for x in shill_notes)
-    shill_brands = sorted({b for x in shill_notes for b in x["shill_brands"].split("、") if b})
+    shill_notes = [x for x in items if (x.get("shill_count") or 0) >= 1]
+    shill_total = sum(x.get("shill_count") or 0 for x in shill_notes)
+    shill_brands = sorted({b for x in shill_notes for b in (x.get("shill_brands") or "").split("、") if b})
     high = [x for x in items if x["risk"] == "高"]
+    new_today = [x for x in items if x.get("first_seen") == today]
+    resolved = [x for x in items if x["sent"] != "neg" and x.get("neg_source") == "none"
+                and (x.get("shill_count") or 0) == 0 and x.get("comment_sent") == "neg"]
 
-    lines = [f"【小红书舆情日报】{today}（自动采集+AI判定）",
-             f"监控笔记 {len(items)} 篇 | 负面 {len(neg)} 篇（笔记本身 {len(note_neg)} / 评论区 {len(cmt_neg)}）| 高风险 {len(high)} 条",
+    lines = [f"【小红书舆情日报】{today}（近24h 全量汇总）",
+             f"监控笔记 {len(items)} 篇（今日新上榜 {len(new_today)}）| "
+             f"负面 {len(neg)} 篇（笔记本身 {len(note_neg)} / 评论区 {len(cmt_neg)}）| 高风险 {len(high)} 条",
              ""]
     lines.append("一、笔记内容负面 TOP3")
-    top = sorted(note_neg, key=lambda x: -x["likes"])[:3]
+    top = sorted(note_neg, key=lambda x: -(x.get("likes") or 0))[:3]
     for i, t in enumerate(top, 1):
-        lines.append(f'{i}. {t["title"]}（赞{t["likes"]} 风险:{t["risk"]}）')
+        lines.append(f'{i}. {t["title"]}（赞{t.get("likes") or 0} 风险:{t["risk"]}）')
     if not top:
         lines.append("无")
     lines.append("")
@@ -549,15 +597,15 @@ def build_report(items):
     if shill_notes:
         lines.append(f"· 疑似竞品蹭评：{len(shill_notes)} 篇命中 / 共 {shill_total} 条"
                      f"（指向：{'、'.join(shill_brands)}）")
-        for x in shill_notes[:5]:
-            lines.append(f'  - {x["title"][:25]}（{x["shill_count"]}条）')
+        for x in sorted(shill_notes, key=lambda x: -(x.get("shill_count") or 0))[:5]:
+            lines.append(f'  - {x["title"][:25]}（{x.get("shill_count")}条）')
     else:
         lines.append("· 无竞品蹭评命中")
     cmt_only = [x for x in cmt_neg if x["neg_source"] == "comment"]
     if cmt_only:
         lines.append(f"· 评论区负面（笔记正常）：{len(cmt_only)} 篇")
-        for x in sorted(cmt_only, key=lambda x: -x["comment_neg_ratio"])[:5]:
-            lines.append(f'  - {x["title"][:25]}（负面占比 {x["comment_neg_ratio"]:.0%}）')
+        for x in sorted(cmt_only, key=lambda x: -(x.get("comment_neg_ratio") or 0))[:5]:
+            lines.append(f'  - {x["title"][:25]}（负面占比 {(x.get("comment_neg_ratio") or 0):.0%}）')
     lines.append("")
     lines.append("三、处置建议")
     if high:
@@ -569,10 +617,9 @@ def build_report(items):
     return "\n".join(lines)
 
 
-def save_report(content, items):
+def save_report(content, summary_note_count, neg_count):
     today = datetime.date.today().isoformat()
-    neg = sum(1 for x in items if x["sent"] == "neg")
-    summary = f"笔记 {len(items)} 篇 · 负面 {neg} 篇（AI判定）"
+    summary = f"近24h 笔记 {summary_note_count} 篇 · 负面 {neg_count} 篇（AI判定汇总）"
     r = requests.post(f"{SUPABASE_URL}/rest/v1/reports?on_conflict=rep_date",
                       headers={**HDRS, "Prefer": "resolution=merge-duplicates"},
                       json=[{"rep_date": today, "content": content, "summary": summary}],
@@ -661,8 +708,10 @@ def main():
     log(f"判定完成：{len(items)} 篇 | 负面 {neg} 篇 | 竞品蹭评命中 {shill} 篇")
 
     push_to_workbench(items)
-    report = build_report(items)
-    save_report(report, items)
+    # 日报数据源改为数据库近 24h 全量（跨批次汇总）
+    db_items = fetch_notes_for_report()
+    report = build_report(db_items)
+    save_report(report, len(db_items), sum(1 for x in db_items if x["sent"] == "neg"))
     log("=== 完成！打开工作台即可查看 ===")
 
 
