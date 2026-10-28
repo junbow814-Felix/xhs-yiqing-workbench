@@ -36,7 +36,7 @@ MEDIA_CRAWLER_DIR = os.environ.get("MEDIA_CRAWLER_DIR", "MediaCrawler")
 # Key 申请: https://bailian.console.aliyun.com/ → API-KEY
 DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
 LLM_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-MODEL_TEXT = os.environ.get("MODEL_TEXT", "qwen-turbo")
+MODEL_TEXT = os.environ.get("MODEL_TEXT", "qwen-flash")
 MODEL_VISION = os.environ.get("MODEL_VISION", "qwen-vl-flash")
 
 # 采集
