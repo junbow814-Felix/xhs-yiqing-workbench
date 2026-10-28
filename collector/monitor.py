@@ -537,33 +537,63 @@ def push_to_workbench(items):
         row["last_seen"] = today
         c_rows.append(row)
 
-    # 拉取现有笔记的 note_id -> id 映射
-    r = requests.get(f"{SUPABASE_URL}/rest/v1/notes?select=id,note_id&source=eq.real&limit=1000",
-                     headers=HDRS, timeout=30)
+    # 拉取现有笔记的 note_id -> {id, all_pos_days, archived} 映射
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/notes?source=eq.real&select=id,note_id,all_pos_days,archived&limit=1000",
+        headers=HDRS, timeout=30)
     r.raise_for_status()
-    existing = {row["note_id"]: row["id"] for row in r.json() if row.get("note_id")}
+    existing = {row["note_id"]: row for row in r.json() if row.get("note_id")}
 
-    inserted = updated = 0
+    def is_fully_positive(it):
+        """完全正面：笔记正面 + 评论正面/无评论 + 无竞品 + 综合非负面"""
+        return (it["sent"] != "neg" and it["neg_source"] == "none"
+                and (it["shill_count"] or 0) == 0
+                and it["note_sent"] == "pos"
+                and it["comment_sent"] in ("pos", "neu"))
+
+    inserted = updated = archived_now = unarchived = 0
     for row in c_rows:
         nid = row.pop("note_id")
+        fully_pos = is_fully_positive(row)
         if nid in existing:
-            # 已有笔记：更新（不含 first_seen）
-            r = requests.patch(
-                f"{SUPABASE_URL}/rest/v1/notes?id=eq.{existing[nid]}",
+            ex = existing[nid]
+            # 连续完全正面计数：同一天内重复采集不累加，跨天 +1
+            prev_days = ex.get("all_pos_days") or 0
+            if fully_pos:
+                row["all_pos_days"] = prev_days + 1 if ex.get("last_seen") != today else prev_days
+            else:
+                row["all_pos_days"] = 0
+            # 连续两天完全正面 → 归档；出现任何负面信号 → 解除归档
+            was_archived = ex.get("archived") or False
+            if row["all_pos_days"] >= 2 and not was_archived:
+                row["archived"] = True
+                archived_now += 1
+            elif not fully_pos and was_archived:
+                row["archived"] = False
+                unarchived += 1
+            else:
+                row["archived"] = was_archived
+            r2 = requests.patch(
+                f"{SUPABASE_URL}/rest/v1/notes?id=eq.{ex['id']}",
                 headers=HDRS, json=row, timeout=30)
-            if r.status_code >= 400:
-                log(f"  更新失败 {row['title'][:20]}: HTTP {r.status_code} {r.text[:120]}")
+            if r2.status_code >= 400:
+                log(f"  更新失败 {row['title'][:20]}: HTTP {r2.status_code} {r2.text[:120]}")
             else:
                 updated += 1
         else:
             row["note_id"] = nid
-            r = requests.post(f"{SUPABASE_URL}/rest/v1/notes",
-                              headers=HDRS, json=row, timeout=30)
-            if r.status_code >= 400:
-                log(f"  插入失败 {row['title'][:20]}: HTTP {r.status_code} {r.text[:120]}")
+            row["all_pos_days"] = 1 if fully_pos else 0
+            row["archived"] = False
+            r2 = requests.post(f"{SUPABASE_URL}/rest/v1/notes",
+                               headers=HDRS, json=row, timeout=30)
+            if r2.status_code >= 400:
+                log(f"  插入失败 {row['title'][:20]}: HTTP {r2.status_code} {r2.text[:120]}")
             else:
                 inserted += 1
-    log(f"合并写入完成：新增 {inserted} 篇 / 更新 {updated} 篇 / 历史保留（含预警状态）")
+    extra = ""
+    if archived_now or unarchived:
+        extra = f" | 自动归档 {archived_now} 篇（连续2天完全正面）| 解除归档 {unarchived} 篇（出现负面信号）"
+    log(f"合并写入完成：新增 {inserted} 篇 / 更新 {updated} 篇{extra}")
 
 
 # ============================================================
