@@ -28,20 +28,26 @@ export function Notes({
   const [fKw, setFKw] = useState("all");
   const [fSent, setFSent] = useState("all");
   const [fSort, setFSort] = useState("heat");
+  const [fBoard, setFBoard] = useState("all");
+
+  const today = new Date().toISOString().slice(0, 10);
 
   const list = useMemo(
     () =>
       sortNotes(
         notes.filter((n) => {
           if (fKw !== "all" && n.kw !== fKw) return false;
-          if (fSent === "all") return true;
-          if (fSent === "neg-note") return n.negSource === "note" || n.negSource === "both";
-          if (fSent === "neg-comment") return n.negSource === "comment" || n.negSource === "both";
-          return n.sent === fSent;
+          if (fSent === "neg-note" && !(n.negSource === "note" || n.negSource === "both")) return false;
+          if (fSent === "neg-comment" && !(n.negSource === "comment" || n.negSource === "both")) return false;
+          if (fSent !== "all" && fSent !== "neg-note" && fSent !== "neg-comment" && n.sent !== fSent) return false;
+          if (fBoard === "new" && n.firstSeen !== today) return false;
+          if (fBoard === "live" && n.lastSeen !== today) return false;
+          if (fBoard === "history" && n.lastSeen === today) return false;
+          return true;
         }),
         fSort,
       ),
-    [notes, fKw, fSent, fSort],
+    [notes, fKw, fSent, fSort, fBoard, today],
   );
 
   return (
@@ -71,6 +77,12 @@ export function Notes({
             <option value="heat">按互动热度</option>
             <option value="time">按发布时间</option>
             <option value="risk">按风险等级</option>
+          </select>
+          <select aria-label="按上榜状态筛选" value={fBoard} onChange={(e) => setFBoard(e.target.value)}>
+            <option value="all">全部上榜状态</option>
+            <option value="new">🆕 今日新上榜</option>
+            <option value="live">实时在榜</option>
+            <option value="history">历史存量</option>
           </select>
           <button className="btn btn-ghost" onClick={() => onExport(list)}>
             导出 CSV
