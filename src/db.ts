@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config";
-import type { AppState, Keyword, Report, Sent, Settings } from "./types";
+import type { AppState, Keyword, ManualNote, Report, Sent, Settings } from "./types";
 
 /* 配置解析：代码内配置优先，其次 localStorage（初始化配置界面写入） */
 
@@ -57,7 +57,7 @@ export function configReady(): boolean {
 
 export async function getState(): Promise<AppState> {
   const c = sb();
-  const [keywords, alerts, reports, settingsRows, realNotes] = await Promise.all([
+  const [keywords, alerts, reports, settingsRows, realNotes, manualNotes] = await Promise.all([
     c.from("keywords").select("id,name,enabled,own_brands").order("id", { ascending: true }),
     c.from("alert_status").select("note_key,status"),
     c
@@ -71,8 +71,9 @@ export async function getState(): Promise<AppState> {
       .select("id,kw,title,author,sent,note_sent,comment_sent,neg_source,shill_count,shill_brands,comment_neg_ratio,likes,comments,collects,risk,excerpt,source,note_url,published_at")
       .order("likes", { ascending: false })
       .limit(500),
+    c.from("manual_notes").select("id,note_key,url,kw,title,note_desc,reporter,neg_type,status,created_at").limit(200),
   ]);
-  const err = keywords.error || alerts.error || reports.error || settingsRows.error || realNotes.error;
+  const err = keywords.error || alerts.error || reports.error || settingsRows.error || realNotes.error || manualNotes.error;
   if (err) throw err;
   return {
     keywords: keywords.data ?? [],
@@ -80,6 +81,9 @@ export async function getState(): Promise<AppState> {
     reports: (reports.data ?? []) as Report[],
     settings: (settingsRows.data as Settings | null) ?? { report_time: "09:00", channel: "wecom", webhook: "" },
     realNotes: realNotes.data ?? [],
+    manualNotes: ((manualNotes.data ?? []) as ManualNote[]).sort(
+      (a, b) => b.created_at.localeCompare(a.created_at),
+    ),
   };
 }
 
@@ -101,6 +105,59 @@ export async function addKeyword(name: string): Promise<Keyword | { error: strin
 export async function saveOwnBrands(id: number, ownBrands: string) {
   const c = sb();
   const { error } = await c.from("keywords").update({ own_brands: ownBrands.slice(0, 300) }).eq("id", id);
+  if (error) throw error;
+}
+
+/* ---------- 手动上报负面笔记 ---------- */
+
+export function extractNoteId(url: string): string | null {
+  const m = /(?:xhslink\.com\/[A-Za-z0-9]+|(?:www\.)?xiaohongshu\.com\/(?:explore|discovery\/item)\/([0-9a-f]{16,}))/.exec(url.trim());
+  if (m) return m[1] ?? m[0];
+  if (/^[0-9a-f]{16,}$/.test(url.trim())) return url.trim();
+  return null;
+}
+
+export async function addManualNote(input: {
+  url: string;
+  kw: string;
+  title: string;
+  note_desc: string;
+  reporter: string;
+  neg_type: string;
+}): Promise<ManualNote | { error: string }> {
+  const c = sb();
+  const noteId = extractNoteId(input.url);
+  if (!noteId) return { error: "bad_url" };
+  const noteKey = `manual-${noteId.slice(-24)}`;
+  const { data, error } = await c
+    .from("manual_notes")
+    .insert({
+      note_key: noteKey,
+      url: input.url.trim().slice(0, 500),
+      kw: input.kw.slice(0, 50),
+      title: (input.title || "（未填标题）").slice(0, 200),
+      note_desc: input.note_desc.slice(0, 1000),
+      reporter: input.reporter.slice(0, 50),
+      neg_type: input.neg_type === "comment" ? "comment" : "note",
+    })
+    .select()
+    .single();
+  if (error) {
+    if (String(error.code) === "23505" || /duplicate/i.test(error.message ?? "")) return { error: "exists" };
+    throw error;
+  }
+  return data as ManualNote;
+}
+
+export async function setManualNoteStatus(id: number, status: string) {
+  const c = sb();
+  const { error } = await c.from("manual_notes").update({ status }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteManualNote(id: number) {
+  const c = sb();
+  const { error } = await c.from("manual_notes").delete().eq("id", id);
   if (error) throw error;
 }
 
