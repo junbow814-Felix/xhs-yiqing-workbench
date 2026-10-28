@@ -190,6 +190,8 @@ export default function App() {
         excerpt: n.excerpt ?? "",
         source: "real",
         noteUrl: (n as { note_url?: string | null }).note_url || undefined,
+        firstSeen: (n as { first_seen?: string | null }).first_seen ?? undefined,
+        lastSeen: (n as { last_seen?: string | null }).last_seen ?? undefined,
       }));
     }
     return genMockNotes(state.keywords);
