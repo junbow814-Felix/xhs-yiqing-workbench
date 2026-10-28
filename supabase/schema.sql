@@ -7,6 +7,7 @@ create table if not exists public.keywords (
   id         bigint generated always as identity primary key,
   name       text not null unique,
   enabled    boolean not null default true,
+  own_brands text not null default '',
   created_at timestamptz not null default now()
 );
 alter table public.keywords enable row level security;
