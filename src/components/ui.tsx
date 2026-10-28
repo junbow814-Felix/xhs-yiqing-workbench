@@ -6,11 +6,37 @@ export function SentChip({ sent }: { sent: Sent }) {
   return <span className={cls}>{sent === "neg" ? "负面" : sent === "pos" ? "正面" : "中性"}</span>;
 }
 
+export function NoteTags({ note }: { note: Note }) {
+  const hasDetail = note.source === "real" && (note.noteSent || note.commentSent);
+  if (!hasDetail) {
+    return <SentChip sent={note.sent} />;
+  }
+  return (
+    <>
+      <span className={"chip " + (note.noteSent === "neg" ? "chip-neg" : note.noteSent === "pos" ? "chip-pos" : "chip-neu")}>
+        笔记·{note.noteSent === "neg" ? "负面" : note.noteSent === "pos" ? "正面" : "中性"}
+      </span>
+      <span
+        className={"chip " + (note.commentSent === "neg" ? "chip-shill" : note.commentSent === "pos" ? "chip-pos" : "chip-neu")}
+      >
+        评论·{note.commentSent === "neg" ? "负面" : note.commentSent === "pos" ? "正面" : "中性"}
+        {note.commentSent === "neg" && note.shillCount ? `·竞品×${note.shillCount}` : ""}
+        {note.commentSent !== "neg" && note.shillCount ? `·⚠竞品×${note.shillCount}` : ""}
+      </span>
+      {note.shillCount && note.shillCount >= 1 && (
+        <span className="chip chip-shill" title="疑似竞品引导评论">
+          ⚠ 竞品蹭评{note.shillBrands ? `→${note.shillBrands}` : ""}
+        </span>
+      )}
+    </>
+  );
+}
+
 export function NoteMeta({ note }: { note: Note }) {
   return (
     <div className="note-meta">
       <span className="chip chip-kw">{note.kw}</span>
-      <SentChip sent={note.sent} />
+      <NoteTags note={note} />
       {note.risk !== "无" && <span className="chip chip-risk">风险:{note.risk}</span>}
       {note.source === "real" && <span className="chip chip-pos">真实采集</span>}
     </div>
