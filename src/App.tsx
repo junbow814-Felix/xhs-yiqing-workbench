@@ -10,6 +10,9 @@ import {
   saveSettings as dbSaveSettings,
   saveStoredConfig,
   setAlertStatus as dbSetAlertStatus,
+  addManualNote as dbAddManualNote,
+  setManualNoteStatus as dbSetManualNoteStatus,
+  deleteManualNote as dbDeleteManualNote,
   toggleKeyword as dbToggleKeyword,
   saveOwnBrands as dbSaveOwnBrands,
 } from "./db";
@@ -273,6 +276,47 @@ export default function App() {
       }
     });
 
+  const addManualNote = (input: { url: string; kw: string; title: string; note_desc: string; reporter: string; neg_type: string }) =>
+    withBusy(async () => {
+      try {
+        const r = await dbAddManualNote(input);
+        if ("error" in r && r.error === "bad_url") {
+          toast("链接格式不对：请粘贴小红书笔记链接（explore 链接或 xhslink 短链）");
+          return;
+        }
+        if ("error" in r && r.error === "exists") {
+          toast("这条笔记已上报过，无需重复提交");
+          return;
+        }
+        toast("已上报，全团队立即可见（见下方预警列表）");
+        await refresh(true);
+      } catch {
+        toast("上报失败，请检查数据库配置");
+      }
+    });
+
+  const setManualNoteStatus = (id: number, status: string) =>
+    withBusy(async () => {
+      try {
+        await dbSetManualNoteStatus(id, status);
+        toast(status === "已闭环" ? "已闭环（全员可见）" : status === "处理中" ? "已转入处理中" : "已重新打开");
+        await refresh(true);
+      } catch {
+        toast("操作失败，请检查数据库配置");
+      }
+    });
+
+  const deleteManualNote = (id: number) =>
+    withBusy(async () => {
+      try {
+        await dbDeleteManualNote(id);
+        toast("已删除该上报记录");
+        await refresh(true);
+      } catch {
+        toast("删除失败，请检查数据库配置");
+      }
+    });
+
   const generateReport = (text: string) =>
     withBusy(async () => {
       const date = todayStr();
@@ -445,9 +489,14 @@ export default function App() {
       {state && tab === "alerts" && (
         <Alerts
           notes={notes}
+          keywords={keywords}
+          manualNotes={state.manualNotes ?? []}
           alerts={alerts}
           onSetStatus={setAlertStatus}
           onOpenNote={setDrawerNote}
+          onAddManual={addManualNote}
+          onSetManualStatus={setManualNoteStatus}
+          onDeleteManual={deleteManualNote}
           busy={busy}
         />
       )}
