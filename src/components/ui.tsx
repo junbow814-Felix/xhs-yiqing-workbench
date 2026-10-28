@@ -33,12 +33,19 @@ export function NoteTags({ note }: { note: Note }) {
 }
 
 export function NoteMeta({ note }: { note: Note }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const onBoardToday = note.lastSeen === today;
+  const isNewToday = note.firstSeen === today;
   return (
     <div className="note-meta">
       <span className="chip chip-kw">{note.kw}</span>
       <NoteTags note={note} />
       {note.risk !== "无" && <span className="chip chip-risk">风险:{note.risk}</span>}
-      {note.source === "real" && <span className="chip chip-pos">真实采集</span>}
+      {note.source === "real" && (
+        <span className="chip chip-pos" title={onBoardToday ? "最近一次采集仍在榜" : `上次出现在榜：${note.lastSeen}`}>
+          {isNewToday ? "🆕 今日新上榜" : onBoardToday ? "实时在榜" : `历史·${note.lastSeen?.slice(5)}`}
+        </span>
+      )}
     </div>
   );
 }
