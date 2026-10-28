@@ -28,9 +28,19 @@ export function Alerts({
   const [filter, setFilter] = useState("all");
   const [kwFilter, setKwFilter] = useState("all");
   const [negFilter, setNegFilter] = useState("all"); // all/note/comment
+  const [boardFilter, setBoardFilter] = useState("all"); // all/new/live/history
   const [showForm, setShowForm] = useState(false);
 
   const st = (key: string) => alerts[key] ?? "待处理";
+  const today = new Date().toISOString().slice(0, 10);
+
+  const boardMatch = (n: Note) => {
+    if (boardFilter === "all") return true;
+    if (boardFilter === "new") return n.firstSeen === today;
+    if (boardFilter === "live") return n.lastSeen === today;
+    if (boardFilter === "history") return n.lastSeen !== today;
+    return true;
+  };
 
   const autoList = notes
     .filter((n) => n.risk !== "无" || n.sent === "neg")
@@ -42,6 +52,7 @@ export function Alerts({
       if (negFilter === "comment") return n.negSource === "comment" || n.negSource === "both";
       return true;
     })
+    .filter(boardMatch)
     .sort((a, b) => {
       const w: Record<string, number> = { 高: 2, 中: 1, 低: 0 };
       return (w[b.risk] - w[a.risk]) || (b.likes - a.likes);
@@ -91,6 +102,12 @@ export function Alerts({
             <option value="all">全部负面类型</option>
             <option value="note">笔记负面</option>
             <option value="comment">评论区负面</option>
+          </select>
+          <select aria-label="按上榜状态筛选" value={boardFilter} onChange={(e) => setBoardFilter(e.target.value)}>
+            <option value="all">全部上榜状态</option>
+            <option value="new">🆕 今日新上榜</option>
+            <option value="live">实时在榜</option>
+            <option value="history">历史存量</option>
           </select>
         </div>
         <div>
@@ -144,6 +161,11 @@ export function Alerts({
                   <span className={"st-chip " + (s === "待处理" ? "st-todo" : s === "处理中" ? "st-doing" : "st-finish")}>{s}</span>
                   <NoteTags note={n} />
                   <span className="chip chip-risk">风险:{n.risk}</span>
+                  {n.source === "real" && (
+                    <span className="chip chip-board" title={`首次上榜 ${n.firstSeen ?? "?"}`}>
+                      {n.firstSeen === today ? "🆕新上榜" : n.lastSeen === today ? "实时在榜" : `历史·${n.lastSeen?.slice(5) ?? ""}`}
+                    </span>
+                  )}
                   {s === "待处理" && (
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onSetStatus(n.key, "处理中")}>开始处理</button>
                   )}
