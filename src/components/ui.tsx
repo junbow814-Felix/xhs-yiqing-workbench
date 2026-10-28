@@ -20,10 +20,10 @@ export function NoteTags({ note }: { note: Note }) {
         className={"chip " + (note.commentSent === "neg" ? "chip-shill" : note.commentSent === "pos" ? "chip-pos" : "chip-neu")}
       >
         评论·{note.commentSent === "neg" ? "负面" : note.commentSent === "pos" ? "正面" : "中性"}
-        {note.commentSent === "neg" && note.shillCount ? `·竞品×${note.shillCount}` : ""}
-        {note.commentSent !== "neg" && note.shillCount ? `·⚠竞品×${note.shillCount}` : ""}
+        {note.commentSent === "neg" && !!note.shillCount && note.shillCount > 0 ? `·竞品×${note.shillCount}` : ""}
+        {note.commentSent !== "neg" && !!note.shillCount && note.shillCount > 0 ? `·⚠竞品×${note.shillCount}` : ""}
       </span>
-      {note.shillCount && note.shillCount >= 1 && (
+      {!!note.shillCount && note.shillCount > 0 && (
         <span className="chip chip-shill" title="疑似竞品引导评论">
           ⚠ 竞品蹭评{note.shillBrands ? `→${note.shillBrands}` : ""}
         </span>
