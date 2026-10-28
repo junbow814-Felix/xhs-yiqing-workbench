@@ -166,13 +166,14 @@ def judge_note_images(image_urls):
 # 判定 3：全量评论（分批）
 # ============================================================
 
-def judge_comments(comments):
-    """全量评论分批判定。comments: [(likes, content), ...]
+def judge_comments(comments, own_brands):
+    """全量评论分批判定。comments: [(likes, content), ...]; own_brands: 自家品牌词集合（小写）
     返回 {neg_count, pos_count, neu_count, shill_count, shill_brands, typical_neg, shill_samples}"""
     result = {"neg_count": 0, "pos_count": 0, "neu_count": 0,
               "shill_count": 0, "shill_brands": set(), "typical_neg": [], "shill_samples": []}
     if not comments:
         return result
+    own_text = "、".join(sorted(own_brands)) if own_brands else "无"
     batches = [comments[i:i + COMMENT_BATCH_SIZE]
                for i in range(0, len(comments), COMMENT_BATCH_SIZE)]
     for batch in batches:
@@ -181,8 +182,10 @@ def judge_comments(comments):
             "你是小红书舆情分析专家。逐条分析下面评论区每条评论。\n"
             '只输出一行 JSON：{"negs": [负面评论序号], "poss": [正面评论序号], '
             '"shills": [{"no": 序号, "brand": "被推荐的竞品品牌名"}]}\n'
-            "负面=吐槽差评质疑避雷；竞品引导(shills)=推荐/暗示购买其他品牌、贬低本品捧竞品"
-            "（用户单纯问'有没有别的推荐'不算，明确带品牌名的推荐才算）。其余视为中性。\n\n"
+            f"本品牌（自己家的，提到它们或其产品型号都不算竞品）：{own_text}\n"
+            "负面=吐槽差评质疑避雷；竞品引导(shills)=推荐/暗示购买**其他品牌**、贬低本品捧其他品牌"
+            "（注意：提到上面列出的自家品牌不算竞品；用户单纯问'有没有别的推荐'不算，"
+            "明确带其他品牌名的推荐才算）。其余视为中性。\n\n"
             f"评论列表：\n{lines}"
         )
         try:
@@ -192,10 +195,15 @@ def judge_comments(comments):
             for shill in d.get("shills", []):
                 no = int(shill.get("no", 0))
                 brand = str(shill.get("brand", "")).strip()[:20]
-                if 1 <= no <= len(batch) and brand:
-                    result["shill_count"] += 1
-                    result["shill_brands"].add(brand)
-                    result["shill_samples"].append(f"「{batch[no-1][1][:60]}」→{brand}")
+                if not (1 <= no <= len(batch) and brand):
+                    continue
+                # 二次校验：竞品品牌命中自家词库 → 剔除（防模型漏看白名单）
+                bl = brand.lower()
+                if any(own in bl or bl in own for own in own_brands):
+                    continue
+                result["shill_count"] += 1
+                result["shill_brands"].add(brand)
+                result["shill_samples"].append(f"「{batch[no-1][1][:60]}」→{brand}")
             for i, (_l, c) in enumerate(batch, 1):
                 if i in negs:
                     result["neg_count"] += 1
@@ -239,16 +247,30 @@ def set_config(kv):
 
 
 def fetch_keywords():
-    r = requests.get(f"{SUPABASE_URL}/rest/v1/keywords?select=name&enabled=eq.true",
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/keywords?select=name,own_brands&enabled=eq.true",
                      headers=HDRS, timeout=30)
     r.raise_for_status()
-    kws = [row["name"] for row in r.json()]
+    kws = {row["name"]: (row.get("own_brands") or "").strip() for row in r.json()}
     log(f"从工作台同步到 {len(kws)} 个监控关键词: {', '.join(kws) or '(无)'}")
     return kws
 
 
+def build_own_brands(keyword, manual_brands):
+    """自家品牌词库 = 手动白名单 + 自动派生（关键词本身 + 首词品牌）"""
+    own = set()
+    for b in (manual_brands or "").replace("，", ",").split(","):
+        b = b.strip()
+        if b:
+            own.add(b.lower())
+    own.add(keyword.strip().lower())
+    first = keyword.strip().split()[0] if keyword.strip() else ""
+    if first:
+        own.add(first.lower())
+    return own
+
+
 def run_crawl_batches(keywords):
-    """双批采集：第1批综合排序，第2批最新排序"""
+    """双批采集：第1批综合排序，第2批最新排序。keywords: {名: 白名单}"""
     set_config({
         "KEYWORDS": f'"{",".join(keywords)}"',
         "CRAWLER_MAX_NOTES_COUNT": str(NOTES_PER_BATCH),
@@ -339,6 +361,7 @@ SENT_CN = {"neg": "负面", "neu": "中性", "pos": "正面"}
 
 
 def analyze_all(contents, comments, keywords):
+    """keywords: {关键词名: 手动白名单字符串}"""
     items = []
     use_llm = bool(DASHSCOPE_API_KEY)
     log(f"判定引擎: {'通义千问 文本=' + MODEL_TEXT + ' 视觉=' + MODEL_VISION if use_llm else '（未配置 Key！）'}")
@@ -354,7 +377,8 @@ def analyze_all(contents, comments, keywords):
         desc = (n.get("desc") or "").strip()
         likes = int(n.get("liked_count") or 0)
         kw = n.get("source_keyword") or next(
-            (k for k in keywords if k in title or k in desc), keywords[0] if keywords else "未分类")
+            (k for k in keywords if k in title or k in desc), next(iter(keywords), "未分类"))
+        own_brands = build_own_brands(kw, keywords.get(kw, ""))
         note_url = (n.get("note_url") or "").strip() or f"https://www.xiaohongshu.com/explore/{nid}"
         log(f"({idx}/{total}) {title[:30]}")
 
@@ -384,7 +408,7 @@ def analyze_all(contents, comments, keywords):
 
         # ③ 全量评论判定
         note_comments = comments.get(nid, [])
-        cm = judge_comments(note_comments)
+        cm = judge_comments(note_comments, own_brands)
         cm_total = cm["neg_count"] + cm["pos_count"] + cm["neu_count"]
         cm_neg_ratio = (cm["neg_count"] / cm_total) if cm_total else 0
 
