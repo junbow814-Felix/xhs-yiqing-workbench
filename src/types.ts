@@ -12,6 +12,12 @@ export interface Note {
   title: string;
   author: string;
   sent: Sent;
+  noteSent?: string;      // 笔记本身情感（真实采集）
+  commentSent?: string;   // 评论区情感
+  negSource?: string;     // note/comment/both/none
+  shillCount?: number;    // 疑似竞品引导评论数
+  shillBrands?: string;   // 涉及竞品品牌
+  commentNegRatio?: number;
   likes: number;
   comments: number;
   collects: number;
@@ -48,6 +54,12 @@ export interface AppState {
     title: string;
     author: string | null;
     sent: Sent;
+    note_sent?: string | null;
+    comment_sent?: string | null;
+    neg_source?: string | null;
+    shill_count?: number | null;
+    shill_brands?: string | null;
+    comment_neg_ratio?: number | null;
     likes: number;
     comments: number;
     collects: number;
