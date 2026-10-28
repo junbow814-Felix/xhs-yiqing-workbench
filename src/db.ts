@@ -58,7 +58,7 @@ export function configReady(): boolean {
 export async function getState(): Promise<AppState> {
   const c = sb();
   const [keywords, alerts, reports, settingsRows, realNotes] = await Promise.all([
-    c.from("keywords").select("id,name,enabled").order("id", { ascending: true }),
+    c.from("keywords").select("id,name,enabled,own_brands").order("id", { ascending: true }),
     c.from("alert_status").select("note_key,status"),
     c
       .from("reports")
@@ -96,6 +96,12 @@ export async function addKeyword(name: string): Promise<Keyword | { error: strin
     throw error;
   }
   return data as Keyword;
+}
+
+export async function saveOwnBrands(id: number, ownBrands: string) {
+  const c = sb();
+  const { error } = await c.from("keywords").update({ own_brands: ownBrands.slice(0, 300) }).eq("id", id);
+  if (error) throw error;
 }
 
 export async function toggleKeyword(id: number, enabled: boolean) {
