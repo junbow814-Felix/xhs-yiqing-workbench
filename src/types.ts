@@ -29,6 +29,7 @@ export interface Note {
   noteUrl?: string;
   firstSeen?: string;
   lastSeen?: string;
+  archived?: boolean;
 }
 
 export interface Report {
@@ -86,6 +87,7 @@ export interface AppState {
     note_url?: string | null;
     first_seen?: string | null;
     last_seen?: string | null;
+    archived?: boolean | null;
     published_at: string;
   }>;
 }
