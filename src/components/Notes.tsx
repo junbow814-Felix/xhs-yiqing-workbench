@@ -27,7 +27,7 @@ export function Notes({
 }) {
   const [fKw, setFKw] = useState("all");
   const [fSent, setFSent] = useState("all");
-  const [fSort, setFSort] = useState("heat");
+  const [fSort, setFSort] = useState("time");
   const [fBoard, setFBoard] = useState("all");
 
   const today = new Date().toISOString().slice(0, 10);
@@ -36,13 +36,15 @@ export function Notes({
     () =>
       sortNotes(
         notes.filter((n) => {
+          if (fBoard === "active" && n.archived) return false;          // 活跃（默认）：不含已归档
+          if (fBoard === "archived" && !n.archived) return false;        // 仅看已归档
           if (fKw !== "all" && n.kw !== fKw) return false;
           if (fSent === "neg-note" && !(n.negSource === "note" || n.negSource === "both")) return false;
           if (fSent === "neg-comment" && !(n.negSource === "comment" || n.negSource === "both")) return false;
           if (fSent !== "all" && fSent !== "neg-note" && fSent !== "neg-comment" && n.sent !== fSent) return false;
           if (fBoard === "new" && n.firstSeen !== today) return false;
           if (fBoard === "live" && n.lastSeen !== today) return false;
-          if (fBoard === "history" && n.lastSeen === today) return false;
+          if (fBoard === "history" && (n.lastSeen === today || n.archived)) return false;
           return true;
         }),
         fSort,
@@ -74,14 +76,16 @@ export function Notes({
             <option value="neu">中性</option>
           </select>
           <select aria-label="排序方式" value={fSort} onChange={(e) => setFSort(e.target.value)}>
+            <option value="time">🕐 按发布时间（最新在前）</option>
             <option value="heat">按互动热度</option>
-            <option value="time">按发布时间</option>
             <option value="risk">按风险等级</option>
           </select>
           <select aria-label="按上榜状态筛选" value={fBoard} onChange={(e) => setFBoard(e.target.value)}>
-            <option value="all">全部上榜状态</option>
+            <option value="active">活跃（默认，不含已归档）</option>
+            <option value="all">全部状态（含已归档）</option>
             <option value="new">🆕 今日新上榜</option>
             <option value="live">实时在榜</option>
+            <option value="archived">📦 已归档（连续2天正面）</option>
             <option value="history">历史存量</option>
           </select>
           <button className="btn btn-ghost" onClick={() => onExport(list)}>
