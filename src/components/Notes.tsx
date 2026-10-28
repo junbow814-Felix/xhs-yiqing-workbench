@@ -32,10 +32,13 @@ export function Notes({
   const list = useMemo(
     () =>
       sortNotes(
-        notes.filter(
-          (n) =>
-            (fKw === "all" || n.kw === fKw) && (fSent === "all" || n.sent === fSent),
-        ),
+        notes.filter((n) => {
+          if (fKw !== "all" && n.kw !== fKw) return false;
+          if (fSent === "all") return true;
+          if (fSent === "neg-note") return n.negSource === "note" || n.negSource === "both";
+          if (fSent === "neg-comment") return n.negSource === "comment" || n.negSource === "both";
+          return n.sent === fSent;
+        }),
         fSort,
       ),
     [notes, fKw, fSent, fSort],
@@ -58,7 +61,9 @@ export function Notes({
           </select>
           <select aria-label="按情感筛选" value={fSent} onChange={(e) => setFSent(e.target.value)}>
             <option value="all">全部情感</option>
-            <option value="neg">负面</option>
+            <option value="neg">负面（综合）</option>
+            <option value="neg-note">笔记负面</option>
+            <option value="neg-comment">评论负面</option>
             <option value="pos">正面</option>
             <option value="neu">中性</option>
           </select>
