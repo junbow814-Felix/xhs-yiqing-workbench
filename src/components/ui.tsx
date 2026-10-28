@@ -42,8 +42,14 @@ export function NoteMeta({ note }: { note: Note }) {
       <NoteTags note={note} />
       {note.risk !== "无" && <span className="chip chip-risk">风险:{note.risk}</span>}
       {note.source === "real" && (
-        <span className="chip chip-pos" title={onBoardToday ? "最近一次采集仍在榜" : `上次出现在榜：${note.lastSeen}`}>
-          {isNewToday ? "🆕 今日新上榜" : onBoardToday ? "实时在榜" : `历史·${note.lastSeen?.slice(5)}`}
+        <span className="chip chip-board" title={onBoardToday ? "最近一次采集仍在榜" : `上次出现在榜：${note.lastSeen}`}>
+          {note.archived
+            ? "📦 已归档"
+            : isNewToday
+              ? "🆕 今日新上榜"
+              : onBoardToday
+                ? "实时在榜"
+                : `历史·${note.lastSeen?.slice(5)}`}
         </span>
       )}
     </div>
