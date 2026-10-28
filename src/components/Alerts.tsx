@@ -28,22 +28,24 @@ export function Alerts({
   const [filter, setFilter] = useState("all");
   const [kwFilter, setKwFilter] = useState("all");
   const [negFilter, setNegFilter] = useState("all"); // all/note/comment
-  const [boardFilter, setBoardFilter] = useState("all"); // all/new/live/history
+  const [boardFilter, setBoardFilter] = useState("active"); // active/all/new/live/history/archived
+  const [sortMode, setSortMode] = useState("time");
   const [showForm, setShowForm] = useState(false);
 
   const st = (key: string) => alerts[key] ?? "待处理";
   const today = new Date().toISOString().slice(0, 10);
 
   const boardMatch = (n: Note) => {
-    if (boardFilter === "all") return true;
+    if (boardFilter === "active" && n.archived) return false;
+    if (boardFilter === "archived" && !n.archived) return false;
     if (boardFilter === "new") return n.firstSeen === today;
-    if (boardFilter === "live") return n.lastSeen === today;
-    if (boardFilter === "history") return n.lastSeen !== today;
+    if (boardFilter === "live") return n.lastSeen === today && !n.archived;
+    if (boardFilter === "history") return n.lastSeen !== today && !n.archived;
     return true;
   };
 
   const autoList = notes
-    .filter((n) => n.risk !== "无" || n.sent === "neg")
+    .filter((n) => n.risk !== "无" || n.sent === "neg" || n.archived)
     .filter((n) => filter === "all" || st(n.key) === filter)
     .filter((n) => kwFilter === "all" || n.kw === kwFilter)
     .filter((n) => {
@@ -54,8 +56,12 @@ export function Alerts({
     })
     .filter(boardMatch)
     .sort((a, b) => {
-      const w: Record<string, number> = { 高: 2, 中: 1, 低: 0 };
-      return (w[b.risk] - w[a.risk]) || (b.likes - a.likes);
+      if (sortMode === "time") return b.time.getTime() - a.time.getTime();
+      if (sortMode === "risk") {
+        const w: Record<string, number> = { 高: 2, 中: 1, 低: 0 };
+        return (w[b.risk] - w[a.risk]) || (b.likes - a.likes);
+      }
+      return b.likes - a.likes;
     });
 
   const manualList = manualNotes
@@ -104,10 +110,17 @@ export function Alerts({
             <option value="comment">评论区负面</option>
           </select>
           <select aria-label="按上榜状态筛选" value={boardFilter} onChange={(e) => setBoardFilter(e.target.value)}>
-            <option value="all">全部上榜状态</option>
+            <option value="active">活跃预警（默认，不含已归档）</option>
+            <option value="all">全部状态（含已归档）</option>
             <option value="new">🆕 今日新上榜</option>
             <option value="live">实时在榜</option>
+            <option value="archived">📦 已归档（连续2天正面）</option>
             <option value="history">历史存量</option>
+          </select>
+          <select aria-label="排序方式" value={sortMode} onChange={(e) => setSortMode(e.target.value)}>
+            <option value="time">🕐 最新发布在前</option>
+            <option value="risk">按风险等级</option>
+            <option value="heat">按互动热度</option>
           </select>
         </div>
         <div>
