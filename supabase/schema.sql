@@ -92,6 +92,9 @@ create table if not exists public.notes (
   excerpt       text not null default '',
   source        text not null default 'real',
   note_url      text not null default '',
+  note_id       text unique,
+  first_seen    date,
+  last_seen     date,
   published_at  timestamptz not null default now()
 );
 alter table public.notes enable row level security;
