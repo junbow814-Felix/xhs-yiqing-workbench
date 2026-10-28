@@ -27,6 +27,8 @@ export interface Note {
   excerpt: string;
   source: "mock" | "real";
   noteUrl?: string;
+  firstSeen?: string;
+  lastSeen?: string;
 }
 
 export interface Report {
@@ -82,6 +84,8 @@ export interface AppState {
     excerpt: string | null;
     source?: string;
     note_url?: string | null;
+    first_seen?: string | null;
+    last_seen?: string | null;
     published_at: string;
   }>;
 }
