@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Note } from "../types";
-import { AlertLine } from "./ui";
+import { AlertLine, NoteTags } from "./ui";
 
 export function Alerts({
   notes,
@@ -56,12 +56,18 @@ export function Alerts({
                   <div className="t">{n.title}</div>
                   <div className="s">
                     <AlertLine note={n} />
+                    {n.shillCount && n.shillCount >= 1 && (
+                      <span style={{ color: "#7c3aed", fontWeight: 700 }}>
+                        {" "}⚠ 疑似竞品蹭评 {n.shillCount} 条{n.shillBrands ? `（指向：${n.shillBrands}）` : ""}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="alert-acts">
                   <span className={"st-chip " + (s === "待处理" ? "st-todo" : s === "处理中" ? "st-doing" : "st-finish")}>
                     {s}
                   </span>
+                  <NoteTags note={n} />
                   <span className="chip chip-risk">风险:{n.risk}</span>
                   {s === "待处理" && (
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onSetStatus(n.key, "处理中")}>
