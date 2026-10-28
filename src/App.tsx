@@ -11,6 +11,7 @@ import {
   saveStoredConfig,
   setAlertStatus as dbSetAlertStatus,
   toggleKeyword as dbToggleKeyword,
+  saveOwnBrands as dbSaveOwnBrands,
 } from "./db";
 import { pushToIm } from "./push";
 import { Overview } from "./components/Overview";
@@ -233,6 +234,17 @@ export default function App() {
       }
     });
 
+  const saveBrands = (k: Keyword, brands: string) =>
+    withBusy(async () => {
+      try {
+        await dbSaveOwnBrands(k.id, brands.trim());
+        toast(`已保存「${k.name}」自家品牌白名单（下次采集生效）`);
+        await refresh(true);
+      } catch {
+        toast("保存失败，请检查数据库配置");
+      }
+    });
+
   const deleteKeyword = (k: Keyword) =>
     withBusy(async () => {
       try {
@@ -422,6 +434,7 @@ export default function App() {
           alertTodo={alertTodo}
           onAddKw={addKeyword}
           onToggleKw={toggleKeyword}
+          onSaveBrands={saveBrands}
           onDeleteKw={deleteKeyword}
           busy={busy}
         />
