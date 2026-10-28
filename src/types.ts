@@ -4,6 +4,7 @@ export interface Keyword {
   id: number;
   name: string;
   enabled: boolean;
+  own_brands?: string;
 }
 
 export interface Note {
