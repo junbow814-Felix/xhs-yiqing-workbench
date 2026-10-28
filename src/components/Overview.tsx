@@ -10,6 +10,7 @@ export function Overview({
   onAddKw,
   onToggleKw,
   onDeleteKw,
+  onSaveBrands,
   busy,
 }: {
   keywords: Keyword[];
@@ -19,9 +20,11 @@ export function Overview({
   onAddKw: (name: string) => void;
   onToggleKw: (k: Keyword) => void;
   onDeleteKw: (k: Keyword) => void;
+  onSaveBrands: (k: Keyword, brands: string) => void;
   busy: boolean;
 }) {
   const [input, setInput] = useState("");
+  const [brandEdit, setBrandEdit] = useState<number | null>(null);
   const total = notes.length;
   const neg = notes.filter((n) => n.sent === "neg").length;
   const negPct = total ? Math.round((neg / total) * 100) : 0;
@@ -108,26 +111,65 @@ export function Overview({
               <div className="empty">还没有关键词，先添加一个吧</div>
             )}
             {keywords.map((k) => (
-              <span key={k.id} className={"kw" + (k.enabled ? "" : " off")}>
-                <span>{k.name}</span>
-                <button
-                  title={k.enabled ? "暂停监控" : "开启监控"}
-                  aria-label={(k.enabled ? "暂停" : "开启") + "关键词" + k.name}
-                  onClick={() => onToggleKw(k)}
-                  disabled={busy}
-                >
-                  {k.enabled ? "停" : "启"}
-                </button>
-                <button
-                  title="删除关键词"
-                  aria-label={"删除关键词" + k.name}
-                  onClick={() => onDeleteKw(k)}
-                  disabled={busy}
-                >
-                  ✕
-                </button>
-              </span>
+              <div key={k.id} style={{ display: "inline-flex", flexDirection: "column", gap: 6, maxWidth: "100%" }}>
+                <span className={"kw" + (k.enabled ? "" : " off")}>
+                  <span>{k.name}</span>
+                  <button
+                    title={k.enabled ? "暂停监控" : "开启监控"}
+                    aria-label={(k.enabled ? "暂停" : "开启") + "关键词" + k.name}
+                    onClick={() => onToggleKw(k)}
+                    disabled={busy}
+                  >
+                    {k.enabled ? "停" : "启"}
+                  </button>
+                  <button
+                    title="设置自家品牌白名单（白名单内的品牌不会被判定为竞品）"
+                    aria-label={"设置白名单" + k.name}
+                    onClick={() => setBrandEdit(brandEdit === k.id ? null : k.id)}
+                    disabled={busy}
+                  >
+                    白
+                  </button>
+                  <button
+                    title="删除关键词"
+                    aria-label={"删除关键词" + k.name}
+                    onClick={() => onDeleteKw(k)}
+                    disabled={busy}
+                  >
+                    ✕
+                  </button>
+                </span>
+                {brandEdit === k.id && (
+                  <span className="kw-brand-edit">
+                    <input
+                      type="text"
+                      placeholder="自家品牌词，逗号分隔，如：海尔,海尔m1,m1 ultra"
+                      defaultValue={k.own_brands ?? ""}
+                      maxLength={300}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          onSaveBrands(k, (e.target as HTMLInputElement).value);
+                        }
+                      }}
+                    />
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={(e) => {
+                        const input = (e.currentTarget.parentElement as HTMLElement).querySelector("input");
+                        if (input) onSaveBrands(k, (input as HTMLInputElement).value);
+                      }}
+                      disabled={busy}
+                    >
+                      保存
+                    </button>
+                  </span>
+                )}
+              </div>
             ))}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--sub)", marginTop: 10 }}>
+            提示：点关键词上的「白」按钮设置自家品牌白名单——白名单内的品牌（含产品型号）不会被判定为竞品蹭评。
+            未设置时自动按关键词首词识别（如「海尔美容仪」→ 海尔）。
           </div>
         </div>
         <div className="card">
