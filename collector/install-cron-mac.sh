@@ -1,6 +1,6 @@
 #!/bin/bash
-# install-cron-mac.sh — 安装定时任务：每日 09:30 采集分析 / 10:00 推送日报
-# 修改时间：先 bash uninstall-cron-mac.sh 再改本文件里的时间后重跑
+# install-cron-mac.sh — 定时任务：每 2 小时采集分析（9:30~21:30）/ 每日 10:00 推送日报
+# 修改频率：先 bash uninstall-cron-mac.sh，改本文件里的 cron 表达式后重跑
 set -e
 cd "$(dirname "$0")"
 ABS="$(pwd)"
@@ -14,15 +14,17 @@ fi
 # 读取 zshrc 里的环境变量（DASHSCOPE_API_KEY 等），cron 环境不加载 ~/.zshrc
 ENV_LINE="export \$(grep -E '^export (DASHSCOPE_API_KEY|LLM_API_KEY|MODEL_TEXT|MODEL_VISION)=' ~/.zshrc 2>/dev/null | sed 's/^export //'); "
 
-JOB_CRAWL="30 9 * * * cd \"$ABS\" && $ENV_LINE \"$PY\" monitor.py >> \"$ABS/monitor.log\" 2>&1 # XhsYiqingCrawl"
+# 每 2 小时采集：9:30, 11:30, 13:30, 15:30, 17:30, 19:30, 21:30（避开夜间）
+JOB_CRAWL="30 9-21/2 * * * cd \"$ABS\" && $ENV_LINE \"$PY\" monitor.py >> \"$ABS/monitor.log\" 2>&1 # XhsYiqingCrawl"
+# 每日 10:00 推送日报（取最新一次采集生成的日报）
 JOB_PUSH="0 10 * * * cd \"$ABS\" && $ENV_LINE \"$PY\" monitor.py --push-only >> \"$ABS/monitor.log\" 2>&1 # XhsYiqingPush"
 
-( crontab -l 2>/dev/null | grep -v "XhsYiqingCrawl\|XhsYiqingPush" ; echo "$JOB_CRAWL" ; echo "$JOB_PUSH" ) | crontab -
+( crontab -l 2>/dev/null | grep -v "XhsYiqingCrawl\|XhsYiqingPush\|XhsYiqingMonitor" ; echo "$JOB_CRAWL" ; echo "$JOB_PUSH" ) | crontab -
 
 echo "已安装定时任务："
 crontab -l | grep XhsYiqing
 echo
-echo "· 09:30 自动采集（双批：综合+最新排序）+ AI 判定 + 写入工作台"
-echo "· 10:00 从工作台取最新日报推送到 IM 群（需在工作台「上报设置」里配好 Webhook）"
+echo "· 每 2 小时自动采集（9:30/11:30/13:30/15:30/17:30/19:30/21:30）+ AI 判定 + 写入工作台"
+echo "· 每日 10:00 推送日报到 IM 群（需在工作台「上报设置」里配好 Webhook）"
 echo "· 前提：Mac 开机且未睡眠。日志见 collector/monitor.log"
 echo "删除：bash uninstall-cron-mac.sh"
