@@ -50,6 +50,8 @@ input,select{font-family:inherit;font-size:16px}
 .kw{display:inline-flex;align-items:center;gap:6px;background:var(--red-soft);color:var(--red);border-radius:999px;padding:7px 8px 7px 14px;font-size:13px;font-weight:600}
 .kw.off{background:#f1f2f4;color:#9aa0a8}
 .kw button{border:0;background:rgba(0,0,0,.06);width:26px;height:26px;border-radius:50%;font-size:13px;line-height:1;color:inherit;display:flex;align-items:center;justify-content:center}
+.kw-brand-edit{display:inline-flex;gap:6px;align-items:center;background:#fff;border:1px dashed var(--line);border-radius:10px;padding:6px 8px;max-width:100%}
+.kw-brand-edit input{flex:1;min-width:220px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:36px;background:#fff;font-size:13px}
 .empty{color:var(--sub);font-size:13px;text-align:center;padding:24px 8px}
 /* charts */
 .chart-wrap{position:relative;width:100%}
