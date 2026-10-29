@@ -34,7 +34,7 @@ MEDIA_CRAWLER_DIR = os.environ.get("MEDIA_CRAWLER_DIR", "MediaCrawler")
 #   文本判定/评论分析: qwen-turbo（文本，便宜）
 #   图片视觉分析:      qwen-vl-flash（视觉，便宜）
 # Key 申请: https://bailian.console.aliyun.com/ → API-KEY
-DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
+DASHSCOPE_API_KEY = os.environ.get("DASHSCOPE_API_KEY", "sk-ws-H.YHIRXLE.kF2V.MEYCIQCu1PgiOasWjcONtpXR-qgrAc9xeR1KhfwlbmKz36t9eQIhANi8EcylPQ6_vCPioIyCCpLIIwUOiZIRj81pbqD8jCRt")
 LLM_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 MODEL_TEXT = os.environ.get("MODEL_TEXT", "qwen-flash")
 MODEL_VISION = os.environ.get("MODEL_VISION", "qwen-vl-flash")
@@ -380,6 +380,14 @@ def analyze_all(contents, comments, keywords):
     log(f"判定引擎: {'通义千问 文本=' + MODEL_TEXT + ' 视觉=' + MODEL_VISION if use_llm else '（未配置 Key！）'}")
     if not use_llm:
         log("错误：本版本需要 DASHSCOPE_API_KEY（通义千问）。请按 SETUP.md 配置后重跑。")
+        sys.exit(1)
+    # 开机自检：真调一次 AI，失败立即报警退出（防止整轮静默降级中性）
+    try:
+        probe = llm_call(MODEL_TEXT, [{"role": "user", "content": "回复OK"}])
+        assert "OK" in probe or len(probe) > 0
+        log("AI 自检通过")
+    except Exception as e:
+        log(f"错误：AI 调用自检失败（{str(e)[:80]}），本轮终止——请检查 Key/网络，避免整轮降级中性")
         sys.exit(1)
 
     total = len(contents)
