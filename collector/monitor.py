@@ -57,6 +57,20 @@ if not SUPABASE_KEY:
     if os.path.exists(_p):
         SUPABASE_KEY = open(_p).read().strip()
 
+
+def _req(method, url, tries=4, **kw):
+    """带重试的 HTTP 请求：网络/SSL 瞬断自动等待重试"""
+    last = None
+    for i in range(tries):
+        try:
+            return requests.request(method, url, timeout=kw.pop("timeout", 30), **kw)
+        except requests.RequestException as e:
+            last = e
+            wait = 8 * (i + 1)
+            log(f"  网络抖动（{str(e)[:60]}），{wait}s 后重试（第 {i+1}/{tries} 次）")
+            time.sleep(wait)
+    raise last
+
 HDRS = {
     "apikey": SUPABASE_KEY,
     "Authorization": "Bearer " + SUPABASE_KEY,
@@ -546,9 +560,9 @@ def push_to_workbench(items):
         c_rows.append(row)
 
     # 拉取现有笔记的 note_id -> {id, all_pos_days, archived} 映射
-    r = requests.get(
+    r = _req("GET",
         f"{SUPABASE_URL}/rest/v1/notes?source=eq.real&select=id,note_id,all_pos_days,archived&limit=1000",
-        headers=HDRS, timeout=30)
+        headers=HDRS)
     r.raise_for_status()
     existing = {row["note_id"]: row for row in r.json() if row.get("note_id")}
 
@@ -581,9 +595,9 @@ def push_to_workbench(items):
                 unarchived += 1
             else:
                 row["archived"] = was_archived
-            r2 = requests.patch(
+            r2 = _req("PATCH",
                 f"{SUPABASE_URL}/rest/v1/notes?id=eq.{ex['id']}",
-                headers=HDRS, json=row, timeout=30)
+                headers=HDRS, json=row)
             if r2.status_code >= 400:
                 log(f"  更新失败 {row['title'][:20]}: HTTP {r2.status_code} {r2.text[:120]}")
             else:
@@ -592,8 +606,8 @@ def push_to_workbench(items):
             row["note_id"] = nid
             row["all_pos_days"] = 1 if fully_pos else 0
             row["archived"] = False
-            r2 = requests.post(f"{SUPABASE_URL}/rest/v1/notes",
-                               headers=HDRS, json=row, timeout=30)
+            r2 = _req("POST", f"{SUPABASE_URL}/rest/v1/notes",
+                               headers=HDRS, json=row)
             if r2.status_code >= 400:
                 log(f"  插入失败 {row['title'][:20]}: HTTP {r2.status_code} {r2.text[:120]}")
             else:
