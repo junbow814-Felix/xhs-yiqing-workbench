@@ -23,6 +23,7 @@ import { Alerts } from "./components/Alerts";
 import { Report as ReportTab } from "./components/Report";
 import { Opensource, Deploy } from "./components/InfoTabs";
 import { Drawer } from "./components/ui";
+import { PasswordGate } from "./gate";
 
 const PAGES = ["overview", "notes", "alerts", "report", "opensource", "deploy"] as const;
 type Page = (typeof PAGES)[number];
@@ -35,6 +36,14 @@ const CHANNEL_NAMES: Record<string, string> = {
 };
 
 const EMPTY_SETTINGS: Settings = { report_time: "09:00", channel: "wecom", webhook: "" };
+
+export default function App() {
+  const [unlocked, setUnlocked] = useState(false);
+  if (!unlocked) {
+    return <PasswordGate onUnlocked={() => setUnlocked(true)} />;
+  }
+  return <Workbench />;
+}
 
 function SetupScreen({ onSaved }: { onSaved: () => void }) {
   const [url, setUrl] = useState("");
@@ -120,7 +129,7 @@ function SetupScreen({ onSaved }: { onSaved: () => void }) {
   );
 }
 
-export default function App() {
+function Workbench() {
   const [ready, setReady] = useState(configReady());
   const [tab, setTab] = useState<Page>("overview");
   const [state, setState] = useState<AppState | null>(null);
