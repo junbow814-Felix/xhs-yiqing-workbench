@@ -405,9 +405,15 @@ def analyze_all(contents, comments, keywords):
         sys.exit(1)
 
     total = len(contents)
+    skipped = 0
     for idx, (nid, n) in enumerate(contents.items(), 1):
         title = (n.get("title") or (n.get("desc") or "")[:50] or "").strip()
         if not title:
+            continue
+        # 只分析当前词表覆盖的笔记：历史 jsonl 里被移除关键词的笔记直接跳过
+        src_kw = n.get("source_keyword") or ""
+        if src_kw and src_kw not in keywords:
+            skipped += 1
             continue
         desc = (n.get("desc") or "").strip()
         likes = int(n.get("liked_count") or 0)
@@ -770,7 +776,8 @@ def main():
     items = analyze_all(contents, comments, keywords)
     neg = sum(1 for x in items if x["sent"] == "neg")
     shill = sum(1 for x in items if x["shill_count"] >= 1)
-    log(f"判定完成：{len(items)} 篇 | 负面 {neg} 篇 | 竞品蹭评命中 {shill} 篇")
+    log(f"判定完成：{len(items)} 篇 | 负面 {neg} 篇 | 竞品蹭评命中 {shill} 篇"
+        + (f" | 跳过 {skipped} 篇（关键词已移除）" if skipped else ""))
 
     push_to_workbench(items)
     # 日报数据源改为数据库近 24h 全量（跨批次汇总）
