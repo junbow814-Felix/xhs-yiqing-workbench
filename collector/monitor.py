@@ -533,7 +533,7 @@ def analyze_all(contents, comments, keywords):
             "note_url": note_url,
             "published_at": normalize_time(n.get("time") or n.get("publish_time")),
         })
-    return items
+    return items, skipped
 
 
 # ============================================================
@@ -613,7 +613,11 @@ def push_to_workbench(items):
             row["all_pos_days"] = 1 if fully_pos else 0
             row["archived"] = False
             r2 = _req("POST", f"{SUPABASE_URL}/rest/v1/notes",
-                               headers=HDRS, json=row)
+                               headers=HDRS)
+            if r2.status_code == 409:
+                # 唯一键撞重（本轮双批重复）：改用 upsert 合并
+                r2 = _req("POST", f"{SUPABASE_URL}/rest/v1/notes?on_conflict=note_id",
+                          headers={**HDRS, "Prefer": "resolution=merge-duplicates"}, json=row)
             if r2.status_code >= 400:
                 log(f"  插入失败 {row['title'][:20]}: HTTP {r2.status_code} {r2.text[:120]}")
             else:
@@ -773,7 +777,7 @@ def main():
         sys.exit(1)
     log(f"加载采集数据：{len(contents)} 篇笔记 / {sum(len(v) for v in comments.values())} 条评论")
 
-    items = analyze_all(contents, comments, keywords)
+    items, skipped = analyze_all(contents, comments, keywords)
     neg = sum(1 for x in items if x["sent"] == "neg")
     shill = sum(1 for x in items if x["shill_count"] >= 1)
     log(f"判定完成：{len(items)} 篇 | 负面 {neg} 篇 | 竞品蹭评命中 {shill} 篇"
