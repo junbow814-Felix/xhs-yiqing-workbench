@@ -4,6 +4,12 @@
 import os
 import sys
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 print("=" * 50)
 print(" 小红书舆情采集 · 环境自检")
 print("=" * 50)
