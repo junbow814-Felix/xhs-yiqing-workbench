@@ -19,6 +19,14 @@ import subprocess
 import sys
 import time
 
+# Windows 控制台默认 GBK，强制 stdout/stderr 用 UTF-8 防中文输出崩溃
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 try:
     import requests
 except ImportError:
